@@ -71,38 +71,27 @@
   const floatingCoords = document.getElementById('floating-coords');
   const floatingSpeed = document.getElementById('floating-speed');
 
-  // --- Theme Management ---
-  function applyTheme(theme) {
-    currentTheme = theme;
-    elHtml.setAttribute('data-theme', theme);
-    safeStorageSet('gps_theme', theme);
+  // --- Free, No-API-Key Tile Providers (Cached automatically by browser) ---
+  const mapLayers = {
+    dark: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 20
+    }),
+    street: L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
+      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>',
+      subdomains: 'abcd',
+      maxZoom: 20
+    }),
+    satellite: L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+      attribution: 'Tiles &copy; Esri &mdash; Source: Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP, UPR-EGP, and the GIS User Community',
+      maxZoom: 19
+    })
+  };
 
-    if (tileLayer && map) {
-      map.removeLayer(tileLayer);
-      tileLayer = getTileLayer(theme);
-      tileLayer.addTo(map);
-    }
-  }
-
-  // --- Leaflet Map Initialization ---
   const DEFAULT_LAT = 17.385044;
   const DEFAULT_LNG = 78.486671;
   const DEFAULT_ZOOM = 16;
-
-  function getTileLayer(theme) {
-    if (theme === 'dark') {
-      return L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/dark_all/{z}/{x}/{y}{r}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions" target="_blank">CARTO</a>',
-        subdomains: 'abcd',
-        maxZoom: 20
-      });
-    } else {
-      return L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
-        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank">OpenStreetMap</a> contributors',
-        maxZoom: 19
-      });
-    }
-  }
 
   const map = L.map('map', {
     zoomControl: false,
@@ -111,9 +100,30 @@
 
   L.control.zoom({ position: 'bottomright' }).addTo(map);
 
-  let tileLayer = getTileLayer(currentTheme);
-  tileLayer.addTo(map);
-  applyTheme(currentTheme);
+  let currentTileLayer = (currentTheme === 'dark' ? mapLayers.dark : mapLayers.street).addTo(map);
+
+  // Layer Switcher Control (Dark, Streets, Satellite - All 100% Free with No API Key)
+  const baseMaps = {
+    "🌙 Dark Mode": mapLayers.dark,
+    "🗺️ Street Map": mapLayers.street,
+    "🛰️ Satellite Imagery": mapLayers.satellite
+  };
+  L.control.layers(baseMaps, null, { position: 'bottomright' }).addTo(map);
+
+  // --- Theme Management ---
+  function applyTheme(theme) {
+    currentTheme = theme;
+    elHtml.setAttribute('data-theme', theme);
+    safeStorageSet('gps_theme', theme);
+
+    if (map.hasLayer(mapLayers.dark) || map.hasLayer(mapLayers.street)) {
+      map.removeLayer(mapLayers.dark);
+      map.removeLayer(mapLayers.street);
+      const newLayer = theme === 'dark' ? mapLayers.dark : mapLayers.street;
+      newLayer.addTo(map);
+      currentTileLayer = newLayer;
+    }
+  }
 
   // Custom GPS Directional Marker Icon
   function createMarkerIcon(courseDeg = 0) {
