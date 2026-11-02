@@ -1,0 +1,33 @@
+{
+  "name": "esp32-gps-tracker",
+  "version": "1.0.0",
+  "description": "Real-time GPS tracking dashboard using Node.js, SerialPort, and Socket.IO for ESP32 and NEO-6M GPS module",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node --watch server.js",
+    "simulate": "node mock-gps.js"
+  },
+  "keywords": [
+    "gps",
+    "esp32",
+    "neo-6m",
+    "serialport",
+    "socket.io",
+    "leaflet",
+    "dashboard",
+    "realtime",
+    "iot"
+  ],
+  "author": "Boggu Ajay Kumar",
+  "license": "MIT",
+  "dependencies": {
+    "@serialport/parser-readline": "^12.0.0",
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "serialport": "^12.0.0",
+    "socket.io": "^4.8.1",
+    "socket.io-client": "^4.8.4"
+  }
+}

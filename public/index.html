@@ -1,0 +1,304 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="dark">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>Real-Time GPS Tracker | ESP32 & NEO-6M</title>
+  
+  <!-- Leaflet CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
+  <!-- Google Fonts: Inter -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  
+  <!-- App Stylesheet -->
+  <link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Top Navigation & Status Bar -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="brand-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="3"></circle>
+            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          </svg>
+        </div>
+        <div class="brand-text">
+          <span class="brand-title">ESP32 GPS Tracker</span>
+          <span class="brand-sub">Real-Time Telemetry</span>
+        </div>
+      </div>
+
+      <!-- Live Status Badges -->
+      <div class="status-badges">
+        <!-- Server Status Badge -->
+        <div class="status-chip" id="badge-server" title="WebSocket connection to Node.js server">
+          <span class="status-dot dot-yellow"></span>
+          <span class="status-text">Server: Connecting</span>
+        </div>
+
+        <!-- Serial Status Badge -->
+        <div class="status-chip" id="badge-serial" title="USB Serial link to ESP32">
+          <span class="status-dot dot-gray"></span>
+          <span class="status-text">Serial: Initializing...</span>
+        </div>
+
+        <!-- GPS Fix Badge -->
+        <div class="status-chip" id="badge-fix" title="Satellite Fix State">
+          <span class="status-dot dot-yellow pulse"></span>
+          <span class="status-text">Searching for satellites...</span>
+        </div>
+      </div>
+
+      <!-- Action Controls -->
+      <div class="topbar-actions">
+        <!-- Auto-Follow Toggle -->
+        <button id="btn-autofollow" class="btn btn-toggle active" title="Toggle Auto-Center on GPS position">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="7"></circle>
+            <circle cx="12" cy="12" r="3"></circle>
+            <line x1="12" y1="2" x2="12" y2="5"></line>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+            <line x1="2" y1="12" x2="5" y2="12"></line>
+            <line x1="19" y1="12" x2="22" y2="12"></line>
+          </svg>
+          <span class="btn-label">Auto-Follow</span>
+        </button>
+
+        <!-- Recenter Map -->
+        <button id="btn-recenter" class="btn btn-secondary" title="Center map on current position">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"></circle>
+            <polygon points="12 8 8 12 12 16 12 8"></polygon>
+          </svg>
+          <span class="btn-label">Center</span>
+        </button>
+
+        <!-- Clear Trail -->
+        <button id="btn-clear-trail" class="btn btn-secondary" title="Clear recorded path">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="3 6 5 6 21 6"></polyline>
+            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+          </svg>
+          <span class="btn-label">Clear Trail</span>
+        </button>
+
+        <!-- Export CSV -->
+        <a id="btn-export-csv" href="/api/export.csv" class="btn btn-secondary" download title="Download recorded track as CSV">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          <span class="btn-label">Export CSV</span>
+        </a>
+
+        <!-- Theme Toggle -->
+        <button id="btn-theme-toggle" class="btn btn-icon" title="Toggle Light / Dark mode" aria-label="Toggle theme">
+          <svg id="theme-icon-sun" class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="5"></circle>
+            <line x1="12" y1="1" x2="12" y2="3"></line>
+            <line x1="12" y1="21" x2="12" y2="23"></line>
+            <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+            <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+            <line x1="1" y1="12" x2="3" y2="12"></line>
+            <line x1="21" y1="12" x2="23" y2="12"></line>
+            <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+            <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+          </svg>
+          <svg id="theme-icon-moon" class="icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+          </svg>
+        </button>
+
+        <!-- Mobile Drawer Toggle -->
+        <button id="btn-sidebar-toggle" class="btn btn-icon mobile-only" title="Toggle telemetry cards" aria-label="Toggle drawer">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
+            <line x1="9" y1="3" x2="9" y2="21"></line>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <!-- Prominent Alert Banner for Wiring Issues or Serial Errors -->
+    <div id="wiring-alert-banner" class="alert-banner hidden">
+      <div class="alert-icon">⚠️</div>
+      <div class="alert-content">
+        <strong id="alert-title">Wiring Alert: 0 Characters Received</strong>
+        <span id="alert-body">The ESP32 has received 0 serial bytes from the GPS module. Verify NEO-6M TX is wired to ESP32 RX, check 3.3V/5V power, and verify baud rate (default 9600 for NEO-6M).</span>
+      </div>
+      <button id="btn-close-alert" class="alert-close" aria-label="Dismiss">&times;</button>
+    </div>
+
+    <!-- Main View: Side Panel + Fullscreen Map -->
+    <main class="main-layout">
+      
+      <!-- Telemetry Sidebar Panel -->
+      <aside class="telemetry-panel" id="telemetry-panel">
+        <div class="panel-header">
+          <h2>Telemetry & Readings</h2>
+          <span class="refresh-indicator" id="last-update-time">Waiting for data...</span>
+        </div>
+
+        <div class="cards-grid">
+          
+          <!-- Card 1: Coordinates -->
+          <div class="telemetry-card coordinates-card">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
+              Coordinates
+            </div>
+            <div class="coords-display">
+              <div class="coord-item">
+                <span class="coord-label">LAT</span>
+                <span class="coord-val" id="val-lat">--.------°</span>
+              </div>
+              <div class="coord-item">
+                <span class="coord-label">LNG</span>
+                <span class="coord-val" id="val-lng">--.------°</span>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 2: Speed -->
+          <div class="telemetry-card speed-card">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
+              Speed
+            </div>
+            <div class="speed-body">
+              <div class="primary-metric">
+                <span class="metric-number" id="val-speed">0.0</span>
+                <span class="metric-unit">km/h</span>
+              </div>
+              <div class="sub-metric" id="val-speed-alt">0.0 mph &bull; 0.0 kn</div>
+            </div>
+          </div>
+
+          <!-- Card 3: Altitude -->
+          <div class="telemetry-card alt-card">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 22 22 22"></polygon></svg>
+              Altitude
+            </div>
+            <div class="primary-metric">
+              <span class="metric-number" id="val-alt">0.0</span>
+              <span class="metric-unit">meters</span>
+            </div>
+            <div class="sub-metric" id="val-alt-ft">0.0 ft above sea level</div>
+          </div>
+
+          <!-- Card 4: Course & Heading -->
+          <div class="telemetry-card course-card">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
+              Course / Heading
+            </div>
+            <div class="course-body">
+              <div class="course-dial-wrap">
+                <div class="compass-dial" id="compass-needle" style="transform: rotate(0deg);">
+                  <div class="needle-tip"></div>
+                </div>
+              </div>
+              <div class="course-info">
+                <div class="primary-metric">
+                  <span class="metric-number" id="val-course">0.0°</span>
+                </div>
+                <div class="sub-metric" id="val-cardinal">North (N)</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Card 5: Satellites & Signal Quality -->
+          <div class="telemetry-card sats-card">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0 0-10 10c0 5.52 4.48 10 10 10s10-4.48 10-10A10 10 0 0 0 12 2z"></path><path d="M12 6a6 6 0 0 0-6 6"></path><path d="M12 10a2 2 0 0 0-2 2"></path></svg>
+              Satellites in View
+            </div>
+            <div class="primary-metric">
+              <span class="metric-number" id="val-sats">0</span>
+              <span class="metric-unit">sats locked</span>
+            </div>
+            <div class="sat-bar-container">
+              <div class="sat-bar-fill" id="sat-bar" style="width: 0%;"></div>
+            </div>
+          </div>
+
+          <!-- Card 6: HDOP Accuracy -->
+          <div class="telemetry-card hdop-card">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
+              HDOP Precision
+            </div>
+            <div class="primary-metric">
+              <span class="metric-number" id="val-hdop">--</span>
+              <span class="hdop-badge badge-neutral" id="hdop-rating">Waiting</span>
+            </div>
+            <div class="sub-metric">Horizontal Dilution of Precision</div>
+          </div>
+
+          <!-- Card 7: Diagnostics & Stream Stats -->
+          <div class="telemetry-card system-card">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
+              Hardware & Session Stats
+            </div>
+            <div class="system-list">
+              <div class="sys-item">
+                <span>GPS Serial Chars:</span>
+                <strong id="val-chars">0</strong>
+              </div>
+              <div class="sys-item">
+                <span>Trail Points:</span>
+                <strong id="val-trail-count">0</strong>
+              </div>
+              <div class="sys-item">
+                <span>Distance Logged:</span>
+                <strong id="val-distance">0.00 km</strong>
+              </div>
+              <div class="sys-item">
+                <span>Hardware Port:</span>
+                <span class="port-select-wrap">
+                  <select id="select-serial-port" title="Select COM port"></select>
+                </span>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </aside>
+
+      <!-- Fullscreen Leaflet Map -->
+      <section class="map-container" id="map-container">
+        <div id="map"></div>
+        
+        <!-- Floating Map Overlay Controls -->
+        <div class="map-floating-panel">
+          <div class="map-stat-badge">
+            <span class="stat-icon">📍</span>
+            <span id="floating-coords">No Fix</span>
+          </div>
+          <div class="map-stat-badge">
+            <span class="stat-icon">⚡</span>
+            <span id="floating-speed">0.0 km/h</span>
+          </div>
+        </div>
+      </section>
+
+    </main>
+
+  </div>
+
+  <!-- Socket.IO Client -->
+  <script src="/socket.io/socket.io.js"></script>
+  <!-- Leaflet JS -->
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+  <!-- App JS -->
+  <script src="/app.js"></script>
+</body>
+</html>

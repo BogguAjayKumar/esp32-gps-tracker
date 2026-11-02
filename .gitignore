@@ -1,0 +1,19 @@
+# Dependencies
+node_modules/
+
+# Environment variables (keep .env local, use .env.example for repo)
+.env
+
+# Session logs
+logs/*.csv
+!logs/.gitkeep
+
+# Operating System Files
+.DS_Store
+Thumbs.db
+
+# IDE and Editor files
+.vscode/
+.idea/
+*.swp
+*.log
