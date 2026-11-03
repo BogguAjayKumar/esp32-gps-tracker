@@ -3,14 +3,21 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Real-Time GPS Tracker | ESP32 & NEO-6M</title>
+  <title>Hina Maps — Live Navigation &amp; Exploration</title>
   
-  <!-- Leaflet CSS -->
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="" />
-  <!-- Google Fonts: Inter -->
+  <!-- PWA & Mobile Web App Meta -->
+  <link rel="manifest" href="/manifest.json" />
+  <meta name="theme-color" content="#06b6d4" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+
+  <!-- MapLibre GL CSS -->
+  <link rel="stylesheet" href="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.css" />
+  
+  <!-- Google Fonts: Inter & JetBrains Mono -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
   
   <!-- App Stylesheet -->
   <link rel="stylesheet" href="/style.css" />
@@ -18,97 +25,124 @@
 <body>
   <div class="app-container">
     
-    <!-- Top Navigation & Status Bar -->
+    <!-- Glassmorphic Top Navigation & Control Bar -->
     <header class="topbar">
+      
+      <!-- Brand & Title -->
       <div class="brand">
         <div class="brand-icon">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="3"></circle>
-            <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"></path>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+            <polygon points="12 2 19 21 12 17 5 21 12 2"></polygon>
           </svg>
         </div>
         <div class="brand-text">
-          <span class="brand-title">ESP32 GPS Tracker</span>
-          <span class="brand-sub">Real-Time Telemetry</span>
+          <span class="brand-title">Hina Maps</span>
+          <span class="brand-sub">Navigation &bull; Spatial Telemetry</span>
         </div>
       </div>
 
-      <!-- Live Status Badges -->
+      <!-- Search Bar with Live Autocomplete -->
+      <div class="search-container">
+        <div class="search-input-wrap">
+          <svg class="search-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="11" cy="11" r="8"></circle>
+            <line x1="21" y1="21" x2="16.65" y2="16.65"></line>
+          </svg>
+          <input type="text" id="search-input" placeholder="Search places, addresses, or lat, lng..." autocomplete="off" />
+          <button id="btn-clear-search" class="btn-clear-search hidden" title="Clear search">&times;</button>
+        </div>
+        <div id="search-suggestions" class="search-suggestions hidden"></div>
+      </div>
+
+      <!-- Live Connection & Fix Chips -->
       <div class="status-badges">
-        <!-- Server Status Badge -->
-        <div class="status-chip" id="badge-server" title="WebSocket connection to Node.js server">
+        <div class="status-chip" id="badge-server" title="WebSocket server link">
           <span class="status-dot dot-yellow"></span>
           <span class="status-text">Server: Connecting</span>
         </div>
 
-        <!-- Serial Status Badge -->
-        <div class="status-chip clickable-badge" id="badge-serial" title="USB Serial link to ESP32 (Click to reconnect or rescan)">
+        <div class="status-chip clickable-badge" id="badge-serial" title="USB Serial link to ESP32 (Click to reconnect)">
           <span class="status-dot dot-gray"></span>
           <span class="status-text">Serial: Initializing...</span>
         </div>
 
-        <!-- GPS Fix Badge -->
-        <div class="status-chip" id="badge-fix" title="Satellite Fix State">
+        <div class="status-chip" id="badge-fix" title="GPS Satellite Fix State">
           <span class="status-dot dot-yellow pulse"></span>
-          <span class="status-text">Searching for satellites...</span>
+          <span class="status-text">Searching satellites...</span>
         </div>
       </div>
 
-      <!-- Action Controls -->
+      <!-- Topbar Action Controls -->
       <div class="topbar-actions">
-        <!-- Live Serial Monitor Toggle -->
-        <button id="btn-serial-monitor" class="btn btn-secondary btn-monitor" title="Open Live Serial Monitor Console">
+        <!-- Auto-Follow / 3D Driving Mode -->
+        <button id="btn-autofollow" class="btn btn-toggle active" title="Toggle Auto-Follow (Click again for 3D Driving View)">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 19 21 12 17 5 21 12 2"></polygon>
+          </svg>
+          <span class="btn-label" id="label-autofollow">Follow: 2D</span>
+        </button>
+
+        <!-- 3D Buildings Extrusion Toggle -->
+        <button id="btn-toggle-3d" class="btn btn-secondary active" title="Toggle 3D Buildings">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path>
+            <polyline points="3.27 6.96 12 12.01 20.73 6.96"></polyline>
+            <line x1="12" y1="22.08" x2="12" y2="12"></line>
+          </svg>
+          <span class="btn-label">3D</span>
+        </button>
+
+        <!-- Turn-by-Turn Navigation Panel Toggle -->
+        <button id="btn-toggle-nav-panel" class="btn btn-secondary" title="Open Navigation &amp; Routing">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6"></polyline>
+          </svg>
+          <span class="btn-label">Directions</span>
+        </button>
+
+        <!-- Saved Places (Favorites) -->
+        <button id="btn-open-favorites" class="btn btn-secondary" title="View Saved Places &amp; Trip Archives">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+          </svg>
+          <span class="btn-label">Saved</span>
+        </button>
+
+        <!-- Export Dropdown -->
+        <div class="dropdown-wrap">
+          <button id="btn-export-menu" class="btn btn-secondary" title="Export Track Data (GPX, GeoJSON, CSV)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+              <polyline points="7 10 12 15 17 10"></polyline>
+              <line x1="12" y1="15" x2="12" y2="3"></line>
+            </svg>
+            <span class="btn-label">Export</span>
+          </button>
+          <div id="export-dropdown" class="dropdown-menu hidden">
+            <a href="/api/export.gpx" download="hina_maps_track.gpx" class="dropdown-item">
+              <span class="item-badge">GPX</span> GPS Exchange Format
+            </a>
+            <a href="/api/export.geojson" download="hina_maps_track.geojson" class="dropdown-item">
+              <span class="item-badge">GEOJSON</span> GIS Feature Vector
+            </a>
+            <a href="/api/export.csv" download="hina_maps_track.csv" class="dropdown-item">
+              <span class="item-badge">CSV</span> Telemetry Spreadsheet
+            </a>
+          </div>
+        </div>
+
+        <!-- Serial Monitor Button -->
+        <button id="btn-serial-monitor" class="btn btn-secondary btn-monitor" title="Open Live USB Serial Monitor">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <polyline points="4 17 10 11 4 5"></polyline>
             <line x1="12" y1="19" x2="20" y2="19"></line>
           </svg>
-          <span class="btn-label">Serial Monitor</span>
-          <span id="serial-pulse-dot" class="serial-pulse-dot" title="Serial data activity"></span>
+          <span class="btn-label">Serial</span>
+          <span id="serial-pulse-dot" class="serial-pulse-dot" title="Data stream activity"></span>
         </button>
-
-        <!-- Auto-Follow Toggle -->
-        <button id="btn-autofollow" class="btn btn-toggle active" title="Toggle Auto-Center on GPS position">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="7"></circle>
-            <circle cx="12" cy="12" r="3"></circle>
-            <line x1="12" y1="2" x2="12" y2="5"></line>
-            <line x1="12" y1="19" x2="12" y2="22"></line>
-            <line x1="2" y1="12" x2="5" y2="12"></line>
-            <line x1="19" y1="12" x2="22" y2="12"></line>
-          </svg>
-          <span class="btn-label">Auto-Follow</span>
-        </button>
-
-        <!-- Recenter Map -->
-        <button id="btn-recenter" class="btn btn-secondary" title="Center map on current position">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <circle cx="12" cy="12" r="10"></circle>
-            <polygon points="12 8 8 12 12 16 12 8"></polygon>
-          </svg>
-          <span class="btn-label">Center</span>
-        </button>
-
-        <!-- Clear Trail -->
-        <button id="btn-clear-trail" class="btn btn-secondary" title="Clear recorded path">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="3 6 5 6 21 6"></polyline>
-            <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
-          </svg>
-          <span class="btn-label">Clear Trail</span>
-        </button>
-
-        <!-- Export CSV -->
-        <a id="btn-export-csv" href="/api/export.csv" class="btn btn-secondary" download title="Download recorded track as CSV">
-          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-            <polyline points="7 10 12 15 17 10"></polyline>
-            <line x1="12" y1="15" x2="12" y2="3"></line>
-          </svg>
-          <span class="btn-label">Export CSV</span>
-        </a>
 
         <!-- Theme Toggle -->
-        <button id="btn-theme-toggle" class="btn btn-icon" title="Toggle Light / Dark mode" aria-label="Toggle theme">
+        <button id="btn-theme-toggle" class="btn btn-icon" title="Toggle Light / Dark mode" aria-label="Toggle Theme">
           <svg id="theme-icon-sun" class="icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <circle cx="12" cy="12" r="5"></circle>
             <line x1="12" y1="1" x2="12" y2="3"></line>
@@ -125,64 +159,83 @@
           </svg>
         </button>
 
+        <!-- Fullscreen Toggle -->
+        <button id="btn-fullscreen-toggle" class="btn btn-icon" title="Toggle Fullscreen" aria-label="Fullscreen">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"></path>
+          </svg>
+        </button>
+
         <!-- Mobile Drawer Toggle -->
-        <button id="btn-sidebar-toggle" class="btn btn-icon mobile-only" title="Toggle telemetry cards" aria-label="Toggle drawer">
+        <button id="btn-sidebar-toggle" class="btn btn-icon mobile-only" title="Toggle Telemetry Cards" aria-label="Toggle Drawer">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
             <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
             <line x1="9" y1="3" x2="9" y2="21"></line>
           </svg>
         </button>
       </div>
+
     </header>
 
-    <!-- Prominent Alert Banner for Wiring Issues or Serial Errors -->
-    <div id="wiring-alert-banner" class="alert-banner hidden">
-      <div class="alert-icon">⚠️</div>
-      <div class="alert-content">
-        <strong id="alert-title">Wiring Alert: 0 Characters Received</strong>
-        <span id="alert-body">The ESP32 has received 0 serial bytes from the GPS module. Verify NEO-6M TX is wired to ESP32 RX, check 3.3V/5V power, and verify baud rate (default 9600 for NEO-6M).</span>
+    <!-- Turn-by-Turn Navigation Active Guidance Banner -->
+    <div id="nav-guidance-banner" class="nav-banner hidden">
+      <div class="nav-maneuver-icon" id="nav-maneuver-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M12 19V5M5 12l7-7 7 7"></path>
+        </svg>
       </div>
-      <button id="btn-close-alert" class="alert-close" aria-label="Dismiss">&times;</button>
+      <div class="nav-instruction-wrap">
+        <div class="nav-distance-callout" id="nav-distance-callout">In 200 m</div>
+        <div class="nav-text" id="nav-instruction-text">Proceed on current road</div>
+      </div>
+      <div class="nav-metrics">
+        <div class="nav-metric-item">
+          <span class="nav-sub-label">REMAINING</span>
+          <span class="nav-val" id="nav-remaining-dist">0.0 km</span>
+        </div>
+        <div class="nav-metric-item">
+          <span class="nav-sub-label">ETA</span>
+          <span class="nav-val" id="nav-eta-time">--:--</span>
+        </div>
+      </div>
+      <div class="nav-controls">
+        <button id="btn-voice-toggle" class="btn btn-icon btn-sm" title="Toggle Spoken Voice Guidance">
+          <svg id="icon-voice-on" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M19.07 4.93a10 10 0 0 1 0 14.14M15.54 8.46a5 5 0 0 1 0 7.07"></path>
+          </svg>
+          <svg id="icon-voice-off" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="1" y1="1" x2="23" y2="23"></line>
+            <polygon points="11 5 6 9 2 9 2 15 6 15 11 19 11 5"></polygon>
+            <path d="M23 9l-6 6m0-6l6 6"></path>
+          </svg>
+        </button>
+        <button id="btn-stop-nav" class="btn btn-danger btn-sm" title="Stop Navigation">
+          <span>End</span>
+        </button>
+      </div>
     </div>
 
-    <!-- Main View: Side Panel + Fullscreen Map -->
+    <!-- Main View: Telemetry Sidebar + MapLibre Map -->
     <main class="main-layout">
       
-      <!-- Telemetry Sidebar Panel -->
+      <!-- Telemetry & Navigation Sidebar -->
       <aside class="telemetry-panel" id="telemetry-panel">
         <div class="panel-header">
-          <h2>Telemetry & Readings</h2>
+          <h2>Telemetry &amp; Navigation</h2>
           <span class="refresh-indicator" id="last-update-time">Waiting for data...</span>
         </div>
 
         <div class="cards-grid">
           
-          <!-- Card 1: Coordinates -->
-          <div class="telemetry-card coordinates-card">
-            <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path><circle cx="12" cy="10" r="3"></circle></svg>
-              Coordinates
-            </div>
-            <div class="coords-display">
-              <div class="coord-item">
-                <span class="coord-label">LAT</span>
-                <span class="coord-val" id="val-lat">--.------°</span>
-              </div>
-              <div class="coord-item">
-                <span class="coord-label">LNG</span>
-                <span class="coord-val" id="val-lng">--.------°</span>
-              </div>
-            </div>
-          </div>
-
-          <!-- Card 2: Live Place Name & Full Address -->
+          <!-- Card 1: Live Place Name & Street Address -->
           <div class="telemetry-card address-card" id="card-address">
             <div class="card-title">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
                 <polyline points="9 22 9 12 15 12 15 22"></polyline>
               </svg>
-              Place &amp; Address
+              <span>Current Place &amp; Address</span>
               <span class="badge-address-tag" id="tag-address-status">Locating</span>
             </div>
             <div class="address-body">
@@ -194,7 +247,13 @@
                     <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                     <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                   </svg>
-                  <span>Copy Address</span>
+                  <span>Copy</span>
+                </button>
+                <button id="btn-save-as-fav" class="btn btn-secondary btn-xs" title="Save this location to favorites">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"></polygon>
+                  </svg>
+                  <span>Star</span>
                 </button>
                 <a id="link-maps-nav" href="https://maps.google.com" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-xs" title="Open in Google Maps">
                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -208,11 +267,15 @@
             </div>
           </div>
 
-          <!-- Card 2: Speed -->
+          <!-- Card 2: Speedometer & Road Speed Limit Warning -->
           <div class="telemetry-card speed-card">
             <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><polyline points="12 6 12 12 16 14"></polyline></svg>
-              Speed
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 16 14"></polyline>
+              </svg>
+              <span>Live Speed &amp; Limit</span>
+              <span id="speed-limit-badge" class="speed-limit-sign hidden" title="Speed limit on current road">50</span>
             </div>
             <div class="speed-body">
               <div class="primary-metric">
@@ -220,27 +283,73 @@
                 <span class="metric-unit">km/h</span>
               </div>
               <div class="sub-metric" id="val-speed-alt">0.0 mph &bull; 0.0 kn</div>
+              <div id="speed-warning-alert" class="speed-warning hidden">
+                ⚠️ OVER SPEED LIMIT (Current Limit: <span id="warning-limit-val">50</span> km/h)
+              </div>
             </div>
           </div>
 
-          <!-- Card 3: Altitude -->
-          <div class="telemetry-card alt-card">
+          <!-- Card 3: Trip Analytics (Duration, Avg/Max Speed, Distance) -->
+          <div class="telemetry-card trip-card">
             <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12 2 2 22 22 22"></polygon></svg>
-              Altitude
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"></circle>
+                <polyline points="12 6 12 12 14 10"></polyline>
+              </svg>
+              <span>Trip Statistics</span>
             </div>
-            <div class="primary-metric">
-              <span class="metric-number" id="val-alt">0.0</span>
-              <span class="metric-unit">meters</span>
+            <div class="trip-grid">
+              <div class="trip-stat">
+                <span class="trip-stat-label">DISTANCE</span>
+                <strong class="trip-stat-val" id="val-distance">0.00 km</strong>
+              </div>
+              <div class="trip-stat">
+                <span class="trip-stat-label">DURATION</span>
+                <strong class="trip-stat-val" id="val-trip-duration">00:00:00</strong>
+              </div>
+              <div class="trip-stat">
+                <span class="trip-stat-label">AVG SPEED</span>
+                <strong class="trip-stat-val" id="val-avg-speed">0.0 km/h</strong>
+              </div>
+              <div class="trip-stat">
+                <span class="trip-stat-label">MAX SPEED</span>
+                <strong class="trip-stat-val" id="val-max-speed">0.0 km/h</strong>
+              </div>
             </div>
-            <div class="sub-metric" id="val-alt-ft">0.0 ft above sea level</div>
           </div>
 
-          <!-- Card 4: Course & Heading -->
-          <div class="telemetry-card course-card">
+          <!-- Card 4: Coordinates & Snapped Road -->
+          <div class="telemetry-card coordinates-card">
             <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"></polygon></svg>
-              Course / Heading
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z"></path>
+                <circle cx="12" cy="10" r="3"></circle>
+              </svg>
+              <span>GPS Coordinates &bull; Kalman Filtered</span>
+            </div>
+            <div class="coords-display">
+              <div class="coord-item">
+                <span class="coord-label">LAT</span>
+                <span class="coord-val" id="val-lat">--.------°</span>
+              </div>
+              <div class="coord-item">
+                <span class="coord-label">LNG</span>
+                <span class="coord-val" id="val-lng">--.------°</span>
+              </div>
+            </div>
+            <div class="coord-road-status" id="road-match-status">
+              <span class="road-dot dot-green"></span>
+              <span id="val-snapped-road">Road Snap Active (OSRM Matching)</span>
+            </div>
+          </div>
+
+          <!-- Card 5: Course, Heading Compass & Altitude -->
+          <div class="telemetry-card course-alt-card">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="3 11 22 2 13 21 11 13 3 11"></polygon>
+              </svg>
+              <span>Heading &amp; Elevation</span>
             </div>
             <div class="course-body">
               <div class="course-dial-wrap">
@@ -253,43 +362,38 @@
                   <span class="metric-number" id="val-course">0.0°</span>
                 </div>
                 <div class="sub-metric" id="val-cardinal">North (N)</div>
+                <div class="sub-metric" id="val-alt-summary">Altitude: 0.0 m (0 ft)</div>
               </div>
             </div>
           </div>
 
-          <!-- Card 5: Satellites & Signal Quality -->
+          <!-- Card 6: Satellites & HDOP Accuracy -->
           <div class="telemetry-card sats-card">
             <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2a10 10 0 0 0-10 10c0 5.52 4.48 10 10 10s10-4.48 10-10A10 10 0 0 0 12 2z"></path><path d="M12 6a6 6 0 0 0-6 6"></path><path d="M12 10a2 2 0 0 0-2 2"></path></svg>
-              Satellites in View
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a10 10 0 0 0-10 10c0 5.52 4.48 10 10 10s10-4.48 10-10A10 10 0 0 0 12 2z"></path>
+                <path d="M12 6a6 6 0 0 0-6 6"></path>
+              </svg>
+              <span>Satellites &amp; Precision (HDOP)</span>
             </div>
             <div class="primary-metric">
               <span class="metric-number" id="val-sats">0</span>
               <span class="metric-unit">sats locked</span>
+              <span class="hdop-badge badge-neutral" id="hdop-rating">Waiting</span>
             </div>
             <div class="sat-bar-container">
               <div class="sat-bar-fill" id="sat-bar" style="width: 0%;"></div>
             </div>
           </div>
 
-          <!-- Card 6: HDOP Accuracy -->
-          <div class="telemetry-card hdop-card">
-            <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"></circle><circle cx="12" cy="12" r="6"></circle><circle cx="12" cy="12" r="2"></circle></svg>
-              HDOP Precision
-            </div>
-            <div class="primary-metric">
-              <span class="metric-number" id="val-hdop">--</span>
-              <span class="hdop-badge badge-neutral" id="hdop-rating">Waiting</span>
-            </div>
-            <div class="sub-metric">Horizontal Dilution of Precision</div>
-          </div>
-
-          <!-- Card 7: Diagnostics & Stream Stats -->
+          <!-- Card 7: Hardware & Stream Stats -->
           <div class="telemetry-card system-card">
             <div class="card-title">
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect><rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect><line x1="6" y1="6" x2="6.01" y2="6"></line><line x1="6" y1="18" x2="6.01" y2="18"></line></svg>
-              Hardware & Session Stats
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="2" y="2" width="20" height="8" rx="2" ry="2"></rect>
+                <rect x="2" y="14" width="20" height="8" rx="2" ry="2"></rect>
+              </svg>
+              <span>Hardware Link</span>
             </div>
             <div class="system-list">
               <div class="sys-item">
@@ -297,18 +401,10 @@
                 <strong id="val-chars">0</strong>
               </div>
               <div class="sys-item">
-                <span>Trail Points:</span>
-                <strong id="val-trail-count">0</strong>
-              </div>
-              <div class="sys-item">
-                <span>Distance Logged:</span>
-                <strong id="val-distance">0.00 km</strong>
-              </div>
-              <div class="sys-item">
                 <span>Hardware Port:</span>
                 <span class="port-select-wrap">
                   <select id="select-serial-port" title="Select COM port or Auto-Detect"></select>
-                  <button id="btn-refresh-ports" class="btn btn-icon btn-sm" title="Scan for newly connected USB devices" aria-label="Rescan ports">
+                  <button id="btn-refresh-ports" class="btn btn-icon btn-sm" title="Scan for newly connected USB devices">
                     <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                       <polyline points="23 4 23 10 17 10"></polyline>
                       <polyline points="1 20 1 14 7 14"></polyline>
@@ -323,13 +419,13 @@
         </div>
       </aside>
 
-      <!-- Fullscreen Leaflet Map -->
+      <!-- MapLibre GL Fullscreen Vector Map Container -->
       <section class="map-container" id="map-container">
         <div id="map"></div>
-        
-        <!-- Floating Map Overlay Controls -->
+
+        <!-- Floating HUD Overlays -->
         <div class="map-floating-panel">
-          <div class="map-stat-badge floating-place-badge" id="floating-place-badge" title="Current Location / Place Name">
+          <div class="map-stat-badge floating-place-badge" id="floating-place-badge" title="Current Location">
             <span class="stat-icon">🏠</span>
             <span id="floating-place">Locating area...</span>
           </div>
@@ -343,10 +439,46 @@
           </div>
         </div>
 
-        <!-- Serial Monitor Bottom Drawer / Console -->
+        <!-- Floating Interactive Map Controls -->
+        <div class="map-controls-cluster">
+          <!-- Recenter Button -->
+          <button id="btn-recenter" class="map-ctrl-btn" title="Re-center on vehicle">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"></circle>
+              <polygon points="12 8 8 12 12 16 12 8"></polygon>
+            </svg>
+          </button>
+
+          <!-- 3D Pitch / Tilt Toggle -->
+          <button id="btn-tilt-toggle" class="map-ctrl-btn" title="Toggle 2D / 3D Pitch Angle">
+            <span class="ctrl-text">3D</span>
+          </button>
+
+          <!-- Compass Reset North -->
+          <button id="btn-compass-north" class="map-ctrl-btn" title="Reset North">
+            <svg id="svg-compass-north" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polygon points="12 2 16 12 12 9 8 12 12 2" fill="#ef4444" stroke="#ef4444"></polygon>
+              <polygon points="12 22 8 12 12 15 16 12 12 22" fill="#94a3b8" stroke="#94a3b8"></polygon>
+            </svg>
+          </button>
+
+          <!-- Zoom Controls -->
+          <button id="btn-zoom-in" class="map-ctrl-btn" title="Zoom in">+</button>
+          <button id="btn-zoom-out" class="map-ctrl-btn" title="Zoom out">&minus;</button>
+        </div>
+
+        <!-- Floating Base Style Switcher (Satellite, Hybrid, Streets, Dark, Terrain) -->
+        <div class="style-switcher-pill" id="style-switcher-pill">
+          <button class="style-btn active" data-style="hybrid" title="Satellite with Place Names, Roads &amp; 3D Buildings">🛰️ Hybrid</button>
+          <button class="style-btn" data-style="satellite" title="Pure Satellite Photography">🛰️ Satellite</button>
+          <button class="style-btn" data-style="streets" title="Detailed Vector Streets">🗺️ Streets</button>
+          <button class="style-btn" data-style="dark" title="Dark Vector Map">🌙 Dark</button>
+          <button class="style-btn" data-style="terrain" title="Topographic Elevation &amp; Hillshade">⛰️ Terrain</button>
+        </div>
+
+        <!-- Serial Monitor Drawer / Console -->
         <div id="serial-monitor-drawer" class="serial-drawer hidden" aria-label="Serial Monitor">
           
-          <!-- Drawer Header Bar -->
           <div class="serial-drawer-header">
             <div class="serial-header-left">
               <div class="serial-title">
@@ -356,13 +488,13 @@
                 </svg>
                 <span>Serial Monitor</span>
               </div>
-              <div class="serial-port-pill" id="monitor-port-pill" title="Active Serial Connection">
+              <div class="serial-port-pill" id="monitor-port-pill">
                 <span class="status-dot dot-green" id="monitor-status-dot"></span>
                 <span id="monitor-port-name">COM7</span>
               </div>
               <div class="serial-baud-pill">
                 <label for="select-monitor-baud">Baud:</label>
-                <select id="select-monitor-baud" title="Switch Serial Baud Rate">
+                <select id="select-monitor-baud">
                   <option value="9600">9600</option>
                   <option value="19200">19200</option>
                   <option value="38400">38400</option>
@@ -374,9 +506,7 @@
               </div>
             </div>
 
-            <!-- Drawer Controls & Filtering -->
             <div class="serial-header-right">
-              <!-- Filter chips -->
               <div class="serial-filters">
                 <button class="filter-chip active" data-filter="all">All</button>
                 <button class="filter-chip" data-filter="json">JSON</button>
@@ -385,12 +515,10 @@
                 <button class="filter-chip" data-filter="debug">Debug</button>
               </div>
 
-              <!-- Search input -->
               <div class="serial-search-box">
                 <input type="text" id="serial-filter-input" placeholder="Search logs..." autocomplete="off" />
               </div>
 
-              <!-- Toggles -->
               <label class="monitor-checkbox" title="Auto-scroll to latest incoming line">
                 <input type="checkbox" id="chk-autoscroll" checked />
                 <span>Scroll</span>
@@ -401,22 +529,21 @@
                 <span>Time</span>
               </label>
 
-              <!-- Action buttons -->
-              <button id="btn-clear-console" class="btn btn-icon btn-sm" title="Clear console buffer" aria-label="Clear Console">
+              <button id="btn-clear-console" class="btn btn-icon btn-sm" title="Clear console buffer">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="3 6 5 6 21 6"></polyline>
                   <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
                 </svg>
               </button>
 
-              <button id="btn-copy-console" class="btn btn-icon btn-sm" title="Copy visible lines to clipboard" aria-label="Copy Console">
+              <button id="btn-copy-console" class="btn btn-icon btn-sm" title="Copy visible lines to clipboard">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
                   <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
                 </svg>
               </button>
 
-              <button id="btn-pause-console" class="btn btn-icon btn-sm" title="Pause / Resume streaming" aria-label="Pause streaming">
+              <button id="btn-pause-console" class="btn btn-icon btn-sm" title="Pause / Resume streaming">
                 <svg id="icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <rect x="6" y="4" width="4" height="16"></rect>
                   <rect x="14" y="4" width="4" height="16"></rect>
@@ -426,7 +553,7 @@
                 </svg>
               </button>
 
-              <button id="btn-expand-console" class="btn btn-icon btn-sm" title="Maximize / Restore Height" aria-label="Maximize">
+              <button id="btn-expand-console" class="btn btn-icon btn-sm" title="Maximize / Restore Height">
                 <svg id="icon-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <polyline points="15 3 21 3 21 9"></polyline>
                   <polyline points="9 21 3 21 3 15"></polyline>
@@ -441,7 +568,7 @@
                 </svg>
               </button>
 
-              <button id="btn-close-console" class="btn btn-icon btn-sm" title="Close Serial Monitor" aria-label="Close">
+              <button id="btn-close-console" class="btn btn-icon btn-sm" title="Close Serial Monitor">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                   <line x1="18" y1="6" x2="6" y2="18"></line>
                   <line x1="6" y1="6" x2="18" y2="18"></line>
@@ -450,26 +577,16 @@
             </div>
           </div>
 
-          <!-- Diagnostic GPS Help Banner -->
-          <div class="serial-diag-bar">
-            <span class="diag-icon">🛰️</span>
-            <span class="diag-text" id="serial-diag-text">
-              <strong>GPS Fix Diagnosis:</strong> Your ESP32 is actively communicating over USB Serial. If you see <code>"fix":false</code> and <code>"sats":0-3</code>, the GPS receiver is actively searching for satellite signals. GPS signals need clear sky visibility (signals cannot pass through concrete or metallic roofs). Move antenna near an open window or outdoors. Once 4+ satellites lock, 3D coordinates appear immediately on the satellite map!
-            </span>
-          </div>
-
-          <!-- Terminal Output Log Area -->
           <div class="terminal-body mono" id="terminal-body" tabindex="0" role="log">
             <div class="terminal-waiting">Connecting to live serial stream...</div>
           </div>
 
-          <!-- Send Command Footer -->
           <form class="terminal-footer" id="form-serial-send">
             <div class="terminal-input-wrap">
               <span class="terminal-prompt">&gt;</span>
-              <input type="text" id="input-serial-command" placeholder="Send serial command to ESP32 (e.g. status or NMEA command)..." autocomplete="off" />
+              <input type="text" id="input-serial-command" placeholder="Send serial command to ESP32..." autocomplete="off" />
             </div>
-            <select id="select-command-ending" title="Line Ending Delimiter">
+            <select id="select-command-ending">
               <option value="\r\n" selected>Both NL &amp; CR (\r\n)</option>
               <option value="\n">Newline (\n)</option>
               <option value="\r">Carriage return (\r)</option>
@@ -477,10 +594,6 @@
             </select>
             <button type="submit" class="btn btn-send" id="btn-send-command">
               <span>Send</span>
-              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                <line x1="22" y1="2" x2="11" y2="13"></line>
-                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
-              </svg>
             </button>
           </form>
 
@@ -489,13 +602,50 @@
 
     </main>
 
+    <!-- Modal: Saved Places & Favorites -->
+    <div id="modal-favorites" class="modal-backdrop hidden">
+      <div class="modal-box">
+        <div class="modal-header">
+          <h3>⭐ Saved Places &amp; Trip History</h3>
+          <button id="btn-close-favorites" class="btn-close-modal">&times;</button>
+        </div>
+        <div class="modal-tabs">
+          <button class="modal-tab-btn active" data-tab="favs">Saved Places</button>
+          <button class="modal-tab-btn" data-tab="history">Trip History</button>
+        </div>
+        <div class="modal-content">
+          <div id="tab-favs-content" class="tab-pane active">
+            <div id="favorites-list" class="items-list"></div>
+          </div>
+          <div id="tab-history-content" class="tab-pane hidden">
+            <div id="trip-history-list" class="items-list"></div>
+          </div>
+        </div>
+      </div>
+    </div>
+
   </div>
 
-  <!-- Socket.IO Client -->
+  <!-- External Libraries: Socket.IO & MapLibre GL JS -->
   <script src="/socket.io/socket.io.js"></script>
-  <!-- Leaflet JS -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <!-- App JS -->
+  <script src="https://unpkg.com/maplibre-gl@4.7.1/dist/maplibre-gl.js"></script>
+
+  <!-- Modular App Scripts -->
+  <script src="/js/kalman.js"></script>
+  <script src="/js/speech.js"></script>
+  <script src="/js/storage.js"></script>
+  <script src="/js/styles.js"></script>
   <script src="/app.js"></script>
+
+  <!-- Service Worker Registration for PWA & Offline Support -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js').catch(err => {
+          console.warn('[PWA] ServiceWorker registration error:', err);
+        });
+      });
+    }
+  </script>
 </body>
 </html>

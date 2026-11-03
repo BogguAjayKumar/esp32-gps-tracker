@@ -1,0 +1,17 @@
+{
+  "name": "Hina Maps - Live Navigation & Spatial Telemetry",
+  "short_name": "Hina Maps",
+  "description": "High-detail live GPS navigation, vector maps, and 3D exploration dashboard",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#0b0f19",
+  "theme_color": "#06b6d4",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><circle cx='50' cy='50' r='45' fill='%2306b6d4'/><polygon points='50,20 75,75 50,60 25,75' fill='%23ffffff'/></svg>",
+      "sizes": "192x192 512x512",
+      "type": "image/svg+xml"
+    }
+  ]
+}

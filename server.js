@@ -1023,15 +1023,55 @@ app.get('/api/routing/route', (req, res) => {
         if (json.code !== 'Ok' || !json.routes || json.routes.length === 0) {
           return res.status(404).json({ success: false, error: 'No route found between coordinates.' });
         }
-        res.json({
-          success: true,
-          routes: json.routes.map(r => ({
+        const routes = json.routes.map(r => {
+          const steps = (r.legs || []).flatMap(leg => (leg.steps || []).map(step => {
+            let instruction = '';
+            const m = step.maneuver || {};
+            const type = m.type || 'turn';
+            const mod = m.modifier || '';
+            const roadName = step.name || '';
+
+            if (type === 'depart') {
+              instruction = roadName ? `Head out onto ${roadName}` : 'Depart on route';
+            } else if (type === 'arrive') {
+              instruction = 'You have arrived at your destination';
+            } else if (type === 'turn') {
+              instruction = `Turn ${mod || 'right'}${roadName ? ' onto ' + roadName : ''}`;
+            } else if (type === 'new name') {
+              instruction = roadName ? `Continue onto ${roadName}` : 'Continue on current road';
+            } else if (type === 'end of road') {
+              instruction = `Turn ${mod || 'right'} at the end of the road${roadName ? ' onto ' + roadName : ''}`;
+            } else if (type === 'roundabout' || type === 'rotary') {
+              instruction = `At the roundabout, take exit ${m.exit || 1}${roadName ? ' onto ' + roadName : ''}`;
+            } else if (type === 'fork') {
+              instruction = `Keep ${mod || 'right'} at the fork${roadName ? ' onto ' + roadName : ''}`;
+            } else {
+              instruction = `${type} ${mod}${roadName ? ' onto ' + roadName : ''}`.trim();
+            }
+
+            return {
+              instruction: instruction.charAt(0).toUpperCase() + instruction.slice(1),
+              distance: step.distance,
+              duration: step.duration,
+              location: m.location || null,
+              maneuver: m,
+              name: roadName
+            };
+          }));
+
+          return {
             distance: r.distance, // meters
             duration: r.duration, // seconds
             geometry: r.geometry, // GeoJSON LineString
+            steps: steps,
             legs: r.legs,
             weight_name: r.weight_name
-          }))
+          };
+        });
+
+        res.json({
+          success: true,
+          routes: routes
         });
       } catch (err) {
         res.status(500).json({ success: false, error: 'Failed to parse routing response' });
@@ -1197,6 +1237,73 @@ app.get('/api/export.csv', (req, res) => {
 
   res.send(csvContent);
 });
+
+/**
+ * GET /api/export.gpx or /api/export/gpx
+ * Exports the active GPS track in standard GPX XML format for GPS devices and GIS apps.
+ */
+function handleGpxExport(req, res) {
+  const downloadFileName = `hina_maps_track_${new Date().toISOString().replace(/[:.]/g, '-')}.gpx`;
+  res.setHeader('Content-Type', 'application/gpx+xml; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"`);
+
+  let gpx = `<?xml version="1.0" encoding="UTF-8"?>\n`;
+  gpx += `<gpx version="1.1" creator="Hina Maps" xmlns="http://www.topografix.com/GPX/1/1">\n`;
+  gpx += `  <metadata>\n    <name>Hina Maps Track Log</name>\n    <time>${new Date().toISOString()}</time>\n  </metadata>\n`;
+  gpx += `  <trk>\n    <name>Live Track</name>\n    <trkseg>\n`;
+
+  for (const pt of trailHistory) {
+    gpx += `      <trkpt lat="${pt.lat}" lon="${pt.lng}">\n`;
+    if (pt.alt !== null && pt.alt !== undefined) gpx += `        <ele>${pt.alt}</ele>\n`;
+    if (pt.timestamp) gpx += `        <time>${pt.timestamp}</time>\n`;
+    if (pt.speed !== null && pt.speed !== undefined) gpx += `        <speed>${(pt.speed / 3.6).toFixed(2)}</speed>\n`;
+    if (pt.sats !== null && pt.sats !== undefined) gpx += `        <sat>${pt.sats}</sat>\n`;
+    if (pt.hdop !== null && pt.hdop !== undefined) gpx += `        <hdop>${pt.hdop}</hdop>\n`;
+    gpx += `      </trkpt>\n`;
+  }
+
+  gpx += `    </trkseg>\n  </trk>\n</gpx>`;
+  res.send(gpx);
+}
+
+app.get('/api/export.gpx', handleGpxExport);
+app.get('/api/export/gpx', handleGpxExport);
+
+/**
+ * GET /api/export.geojson or /api/export/geojson
+ * Exports the active GPS track in standard GeoJSON format.
+ */
+function handleGeoJsonExport(req, res) {
+  const downloadFileName = `hina_maps_track_${new Date().toISOString().replace(/[:.]/g, '-')}.geojson`;
+  res.setHeader('Content-Type', 'application/geo+json; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${downloadFileName}"`);
+
+  const coordinates = trailHistory.map(pt => [pt.lng, pt.lat, pt.alt || 0]);
+  const geojson = {
+    type: 'FeatureCollection',
+    name: 'Hina Maps GPS Track',
+    features: [
+      {
+        type: 'Feature',
+        properties: {
+          name: 'Hina Maps Live Track',
+          pointCount: trailHistory.length,
+          startTime: trailHistory[0]?.timestamp || null,
+          endTime: trailHistory[trailHistory.length - 1]?.timestamp || null
+        },
+        geometry: {
+          type: 'LineString',
+          coordinates: coordinates
+        }
+      }
+    ]
+  };
+
+  res.json(geojson);
+}
+
+app.get('/api/export.geojson', handleGeoJsonExport);
+app.get('/api/export/geojson', handleGeoJsonExport);
 
 // --- Server Startup ---
 server.listen(PORT, () => {
