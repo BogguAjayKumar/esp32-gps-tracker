@@ -24,22 +24,40 @@ A real-time GPS tracking dashboard built with **Node.js**, **Express**, **Serial
 
 ## ✨ Features
 
-- **Real-Time Telemetry Streaming:** Receives JSON GPS objects per second from the ESP32, validates coordinates, stamps with server ISO timestamps, and emits via Socket.IO.
-- **Interactive Fullscreen Map:** Powered by Leaflet.js with smooth position transitions, directional course-heading arrow marker, and dynamic color-coded polyline trail.
+- **Interactive Fullscreen Satellite Map with Place Names & Roads (Hybrid):** Powered by Leaflet.js with smooth position transitions, directional course-heading arrow marker, and dynamic color-coded polyline trail. **Satellite Imagery with labeled place names, boundaries, and street overlays (Esri World Imagery + Boundaries & Transportation) is active by default** on page load.
+- **Live Place Names & Human-Readable Street Addresses:**
+  - **Telemetry Card:** Live reverse-geocoded place name (e.g. `Street Number 3, Tejaswi Nagar`) and full postal street address (`Street Number 3, Tejaswi Nagar, Ward 61 Attapur, Rajendranagar mandal, Telangana, 500052, India`).
+  - **Quick Actions:** One-click "Copy Address" and direct "Google Maps" navigation link.
+  - **Interactive Map Inspection:** Click anywhere on the map to inspect the exact place name, address, and coordinates of that location in a popup!
+  - **Marker Popup:** Click or hover on the vehicle marker to view its live place name, full address, speed, sats, and heading.
+- **Embedded Web Serial Monitor Console:**
+  - View live incoming serial lines from the ESP32 in real time directly in the browser without locking the COM port.
+  - Line color-coding for JSON telemetry, raw NMEA sentences, debug messages, and sent commands.
+  - Interactive controls: Auto-scroll, timestamp toggle, pause/resume, clear console, and one-click copy to clipboard.
+  - Filter by category (`All`, `JSON`, `NMEA`, `Sent TX`, `Debug`) or search with instant keyword filtering.
+  - Bidirectional communication: Send serial commands or NMEA instructions to the ESP32 with configurable line endings (`\r\n`, `\n`, `\r`, None).
+  - Live baud rate switcher (`9600` to `921600` baud) right from the monitor drawer.
+- **Dual Stream Ingestion (JSON & Raw NMEA):**
+  - Seamlessly parses JSON payloads from the Arduino TinyGPS++ sketch.
+  - Automatically parses raw NMEA sentences (`$GPRMC`, `$GNRMC`, `$GPGGA`, `$GNGGA`) if the module outputs NMEA directly.
+- **Real-Time Telemetry Streaming:** Receives telemetry per second from the ESP32, validates coordinates, stamps with server ISO timestamps, and emits via Socket.IO.
 - **Auto-Follow & Trail Management:**
   - Auto-center toggle that keeps the map centered on the vehicle / marker as it moves.
   - "Clear Trail" action to reset in-memory history and map polylines.
   - "Recenter" button to quickly focus on the last reported position.
-- **Rich Telemetry Cards:**
-  - **Coordinates:** Latitude & Longitude in decimal degrees with cardinal notation (e.g. `17.385044° N, 78.486671° E`).
+- **Rich Telemetry Cards & Satellite Lock Diagnostics:**
+  - **Coordinates:** Latitude & Longitude in decimal degrees with cardinal notation (e.g. `17.385044° N, 78.486671° E`). When searching, shows satellite count and locking guidance.
   - **Speed:** Formatted in `km/h` with secondary `mph` and `knots` display.
   - **Altitude:** Meters above sea level with feet conversion.
   - **Course / Heading:** Dynamic 360° rotating compass needle and cardinal direction (e.g., `NE (North-East)`).
-  - **Satellites in View:** Satellite count indicator and signal strength bar.
+  - **Satellites in View:** Satellite count indicator with progress bar (`need 4+ for 3D fix`).
   - **HDOP (Precision):** Color-coded accuracy badge (Ideal, Excellent, Good, Moderate, Poor).
   - **Diagnostics:** Elapsed update ticker, raw character counter, distance traveled, and total points.
-- **Resilient Serial Connection:**
-  - Automatic reconnection every 3 seconds if the port is disconnected or busy.
+- **Smart Plug & Play Serial Connection:**
+  - **Auto-Discovery:** Automatically scans USB ports and detects ESP32 / USB-UART bridges (CP2102, CH340, FTDI, Espressif native USB). Connects automatically on cable insertion without clicking any buttons.
+  - **Bluetooth Isolation:** Automatically detects and filters out Bluetooth virtual serial ports to prevent connection hangs.
+  - **Real-Time Port Sync:** Emits hot-plug port updates via Socket.IO so the UI dropdown updates live without refreshing the browser.
+  - **Manual UI Override:** Includes an interactive port dropdown, a manual rescan button, and a clickable status badge if you want to lock onto a specific port.
   - Non-blocking error handling for `Access denied` when serial monitors are left open.
   - Safely ignores non-JSON debug lines without crashing.
 - **Wiring Alert System:** Detects if GPS character count (`chars`) stays at 0 and presents a warning alert to check TX/RX pin connections, power, or baud rate.
@@ -89,15 +107,16 @@ npm install
 Review `.env` (or copy `.env.example` to `.env`):
 ```ini
 PORT=3000
+AUTO_DETECT=true
 SERIAL_PORT=COM7
 BAUD_RATE=115200
-RECONNECT_INTERVAL_MS=3000
+RECONNECT_INTERVAL_MS=2000
 MAX_TRAIL_POINTS=500
 LOG_DIR=logs
 SIMULATION_MODE=false
 ```
 
-> **Note:** If your ESP32 appears on a different COM port (e.g. `COM3`, `COM4`), update `SERIAL_PORT` in `.env` or select it directly from the UI dropdown.
+> **Note:** With `AUTO_DETECT=true` (enabled by default), you do not need to configure COM ports manually. Simply plug your ESP32 cable into your laptop, and the server will detect and stream from it automatically. You can also pick a specific port from the web dashboard dropdown anytime.
 
 ### 3. Run the Server
 ```powershell
@@ -184,6 +203,10 @@ void loop() {
 | `/api/ports` | `GET` | Lists all detected system serial COM ports. |
 | `/api/ports/select` | `POST` | Dynamically switches to a different COM port / baud rate without restarting. |
 | `/api/status` | `GET` | Returns connection state, client count, recorded points, and latest reading. |
+| `/api/geocode/reverse` | `GET` | Reverse geocodes latitude/longitude coordinates to place names and full address. |
+| `/api/serial/logs` | `GET` | Returns the recent circular log buffer for the web serial monitor. |
+| `/api/serial/send` | `POST` | Sends a text command to the microcontroller over the active serial port. |
+| `/api/serial/clear` | `POST` | Clears buffered serial logs on the server. |
 | `/api/export.csv` | `GET` | Downloads the active recorded track as a standard CSV file. |
 | `/api/trail/clear` | `POST` | Clears recorded trail points from server memory and broadcasts to clients. |
 
@@ -203,12 +226,13 @@ void loop() {
   1. Open Windows Device Manager (`Win + X` -> **Device Manager**) and expand **Ports (COM & LPT)** to verify your CP210x or CH340 COM port.
   2. Use the **Hardware Port** dropdown at the bottom of the dashboard sidebar to select the correct port live, or update `SERIAL_PORT` in `.env`.
 
-### 3. No GPS Fix Indoors ("Searching for Satellites...")
-- **Cause:** GPS signals (1575.42 MHz) are attenuated by concrete, brick, metallic roofs, and window coatings. The NEO-6M requires clear line-of-sight to at least 4 satellites for a 3D fix.
+### 3. No Real GPS Location Indoors ("fix":false, "sats":0-3)
+- **Cause:** GPS signals (1575.42 MHz) cannot penetrate concrete walls, metal ceilings, or tinted window glass. The NEO-6M GPS receiver requires an unobstructed view of the sky and at least 4 satellites in view to calculate a 3D trilateration fix. Until then, `gps.location.isValid()` returns `false` and the module does not transmit coordinates.
 - **Fix:**
-  1. Place the GPS patch antenna on an open windowsill, balcony, or outdoors.
-  2. Ensure the ceramic square antenna faces upwards towards the sky.
-  3. A "cold start" outdoors takes between 45 seconds to 2 minutes on the first lock. The green/blue LED on the NEO-6M will start blinking once satellite lock is achieved.
+  1. Click **Serial Monitor** in the top navigation bar of the dashboard to inspect the raw stream. If `chars` is increasing, communication between ESP32 and NEO-6M is healthy!
+  2. Watch the `sats` count in the Serial Monitor and Telemetry panel.
+  3. Place the ceramic patch antenna near an open window or outdoors with the antenna facing the open sky.
+  4. Once 4+ satellites lock, `fix` switches to `true`, the NEO-6M PPS status LED starts blinking, and your real location immediately updates on the default satellite map!
 
 ### 4. Blank Map
 - **Cause:** Missing internet connectivity to download map tiles, or browser ad blockers blocking the OpenStreetMap/CARTO CDN.

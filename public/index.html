@@ -42,7 +42,7 @@
         </div>
 
         <!-- Serial Status Badge -->
-        <div class="status-chip" id="badge-serial" title="USB Serial link to ESP32">
+        <div class="status-chip clickable-badge" id="badge-serial" title="USB Serial link to ESP32 (Click to reconnect or rescan)">
           <span class="status-dot dot-gray"></span>
           <span class="status-text">Serial: Initializing...</span>
         </div>
@@ -56,6 +56,16 @@
 
       <!-- Action Controls -->
       <div class="topbar-actions">
+        <!-- Live Serial Monitor Toggle -->
+        <button id="btn-serial-monitor" class="btn btn-secondary btn-monitor" title="Open Live Serial Monitor Console">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="4 17 10 11 4 5"></polyline>
+            <line x1="12" y1="19" x2="20" y2="19"></line>
+          </svg>
+          <span class="btn-label">Serial Monitor</span>
+          <span id="serial-pulse-dot" class="serial-pulse-dot" title="Serial data activity"></span>
+        </button>
+
         <!-- Auto-Follow Toggle -->
         <button id="btn-autofollow" class="btn btn-toggle active" title="Toggle Auto-Center on GPS position">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -165,6 +175,39 @@
             </div>
           </div>
 
+          <!-- Card 2: Live Place Name & Full Address -->
+          <div class="telemetry-card address-card" id="card-address">
+            <div class="card-title">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+                <polyline points="9 22 9 12 15 12 15 22"></polyline>
+              </svg>
+              Place &amp; Address
+              <span class="badge-address-tag" id="tag-address-status">Locating</span>
+            </div>
+            <div class="address-body">
+              <div class="address-place" id="val-place-name">Locating place...</div>
+              <div class="address-text" id="val-full-address">Waiting for satellite fix...</div>
+              <div class="address-actions">
+                <button id="btn-copy-address" class="btn btn-secondary btn-xs" title="Copy full address to clipboard">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                    <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                  </svg>
+                  <span>Copy Address</span>
+                </button>
+                <a id="link-maps-nav" href="https://maps.google.com" target="_blank" rel="noopener noreferrer" class="btn btn-secondary btn-xs" title="Open in Google Maps">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6"></path>
+                    <polyline points="15 3 21 3 21 9"></polyline>
+                    <line x1="10" y1="14" x2="21" y2="3"></line>
+                  </svg>
+                  <span>Google Maps</span>
+                </a>
+              </div>
+            </div>
+          </div>
+
           <!-- Card 2: Speed -->
           <div class="telemetry-card speed-card">
             <div class="card-title">
@@ -264,7 +307,14 @@
               <div class="sys-item">
                 <span>Hardware Port:</span>
                 <span class="port-select-wrap">
-                  <select id="select-serial-port" title="Select COM port"></select>
+                  <select id="select-serial-port" title="Select COM port or Auto-Detect"></select>
+                  <button id="btn-refresh-ports" class="btn btn-icon btn-sm" title="Scan for newly connected USB devices" aria-label="Rescan ports">
+                    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <polyline points="23 4 23 10 17 10"></polyline>
+                      <polyline points="1 20 1 14 7 14"></polyline>
+                      <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"></path>
+                    </svg>
+                  </button>
                 </span>
               </div>
             </div>
@@ -279,6 +329,10 @@
         
         <!-- Floating Map Overlay Controls -->
         <div class="map-floating-panel">
+          <div class="map-stat-badge floating-place-badge" id="floating-place-badge" title="Current Location / Place Name">
+            <span class="stat-icon">🏠</span>
+            <span id="floating-place">Locating area...</span>
+          </div>
           <div class="map-stat-badge">
             <span class="stat-icon">📍</span>
             <span id="floating-coords">No Fix</span>
@@ -287,6 +341,149 @@
             <span class="stat-icon">⚡</span>
             <span id="floating-speed">0.0 km/h</span>
           </div>
+        </div>
+
+        <!-- Serial Monitor Bottom Drawer / Console -->
+        <div id="serial-monitor-drawer" class="serial-drawer hidden" aria-label="Serial Monitor">
+          
+          <!-- Drawer Header Bar -->
+          <div class="serial-drawer-header">
+            <div class="serial-header-left">
+              <div class="serial-title">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="4 17 10 11 4 5"></polyline>
+                  <line x1="12" y1="19" x2="20" y2="19"></line>
+                </svg>
+                <span>Serial Monitor</span>
+              </div>
+              <div class="serial-port-pill" id="monitor-port-pill" title="Active Serial Connection">
+                <span class="status-dot dot-green" id="monitor-status-dot"></span>
+                <span id="monitor-port-name">COM7</span>
+              </div>
+              <div class="serial-baud-pill">
+                <label for="select-monitor-baud">Baud:</label>
+                <select id="select-monitor-baud" title="Switch Serial Baud Rate">
+                  <option value="9600">9600</option>
+                  <option value="19200">19200</option>
+                  <option value="38400">38400</option>
+                  <option value="57600">57600</option>
+                  <option value="115200" selected>115200</option>
+                  <option value="230400">230400</option>
+                  <option value="921600">921600</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Drawer Controls & Filtering -->
+            <div class="serial-header-right">
+              <!-- Filter chips -->
+              <div class="serial-filters">
+                <button class="filter-chip active" data-filter="all">All</button>
+                <button class="filter-chip" data-filter="json">JSON</button>
+                <button class="filter-chip" data-filter="nmea">NMEA</button>
+                <button class="filter-chip" data-filter="tx">Sent</button>
+                <button class="filter-chip" data-filter="debug">Debug</button>
+              </div>
+
+              <!-- Search input -->
+              <div class="serial-search-box">
+                <input type="text" id="serial-filter-input" placeholder="Search logs..." autocomplete="off" />
+              </div>
+
+              <!-- Toggles -->
+              <label class="monitor-checkbox" title="Auto-scroll to latest incoming line">
+                <input type="checkbox" id="chk-autoscroll" checked />
+                <span>Scroll</span>
+              </label>
+
+              <label class="monitor-checkbox" title="Display timestamps for every line">
+                <input type="checkbox" id="chk-timestamp" checked />
+                <span>Time</span>
+              </label>
+
+              <!-- Action buttons -->
+              <button id="btn-clear-console" class="btn btn-icon btn-sm" title="Clear console buffer" aria-label="Clear Console">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="3 6 5 6 21 6"></polyline>
+                  <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path>
+                </svg>
+              </button>
+
+              <button id="btn-copy-console" class="btn btn-icon btn-sm" title="Copy visible lines to clipboard" aria-label="Copy Console">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+
+              <button id="btn-pause-console" class="btn btn-icon btn-sm" title="Pause / Resume streaming" aria-label="Pause streaming">
+                <svg id="icon-pause" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <rect x="6" y="4" width="4" height="16"></rect>
+                  <rect x="14" y="4" width="4" height="16"></rect>
+                </svg>
+                <svg id="icon-play" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                </svg>
+              </button>
+
+              <button id="btn-expand-console" class="btn btn-icon btn-sm" title="Maximize / Restore Height" aria-label="Maximize">
+                <svg id="icon-maximize" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="15 3 21 3 21 9"></polyline>
+                  <polyline points="9 21 3 21 3 15"></polyline>
+                  <line x1="21" y1="3" x2="14" y2="10"></line>
+                  <line x1="3" y1="21" x2="10" y2="14"></line>
+                </svg>
+                <svg id="icon-restore" class="hidden" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="4 14 10 14 10 20"></polyline>
+                  <polyline points="20 10 14 10 14 4"></polyline>
+                  <line x1="14" y1="10" x2="21" y2="3"></line>
+                  <line x1="3" y1="21" x2="10" y2="14"></line>
+                </svg>
+              </button>
+
+              <button id="btn-close-console" class="btn btn-icon btn-sm" title="Close Serial Monitor" aria-label="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <line x1="18" y1="6" x2="6" y2="18"></line>
+                  <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+              </button>
+            </div>
+          </div>
+
+          <!-- Diagnostic GPS Help Banner -->
+          <div class="serial-diag-bar">
+            <span class="diag-icon">🛰️</span>
+            <span class="diag-text" id="serial-diag-text">
+              <strong>GPS Fix Diagnosis:</strong> Your ESP32 is actively communicating over USB Serial. If you see <code>"fix":false</code> and <code>"sats":0-3</code>, the GPS receiver is actively searching for satellite signals. GPS signals need clear sky visibility (signals cannot pass through concrete or metallic roofs). Move antenna near an open window or outdoors. Once 4+ satellites lock, 3D coordinates appear immediately on the satellite map!
+            </span>
+          </div>
+
+          <!-- Terminal Output Log Area -->
+          <div class="terminal-body mono" id="terminal-body" tabindex="0" role="log">
+            <div class="terminal-waiting">Connecting to live serial stream...</div>
+          </div>
+
+          <!-- Send Command Footer -->
+          <form class="terminal-footer" id="form-serial-send">
+            <div class="terminal-input-wrap">
+              <span class="terminal-prompt">&gt;</span>
+              <input type="text" id="input-serial-command" placeholder="Send serial command to ESP32 (e.g. status or NMEA command)..." autocomplete="off" />
+            </div>
+            <select id="select-command-ending" title="Line Ending Delimiter">
+              <option value="\r\n" selected>Both NL &amp; CR (\r\n)</option>
+              <option value="\n">Newline (\n)</option>
+              <option value="\r">Carriage return (\r)</option>
+              <option value="">No line ending</option>
+            </select>
+            <button type="submit" class="btn btn-send" id="btn-send-command">
+              <span>Send</span>
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </form>
+
         </div>
       </section>
 

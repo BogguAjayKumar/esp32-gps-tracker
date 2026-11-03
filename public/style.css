@@ -171,6 +171,17 @@ html, body {
   white-space: nowrap;
 }
 
+.clickable-badge {
+  cursor: pointer;
+  user-select: none;
+}
+
+.clickable-badge:hover {
+  border-color: var(--accent-cyan);
+  background: var(--bg-card-hover);
+  transform: translateY(-1px);
+}
+
 .status-dot {
   width: 8px;
   height: 8px;
@@ -486,6 +497,152 @@ html, body {
   color: var(--text-main);
 }
 
+/* Address & Place Card */
+.address-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.badge-address-tag {
+  margin-left: auto;
+  font-size: 0.68rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  padding: 1px 7px;
+  border-radius: 10px;
+  background: rgba(6, 182, 212, 0.18);
+  color: var(--accent-cyan);
+}
+
+.badge-address-tag.active {
+  background: rgba(16, 185, 129, 0.18);
+  color: var(--status-green);
+}
+
+.address-body {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.address-place {
+  font-size: 1.02rem;
+  font-weight: 700;
+  color: var(--text-main);
+  letter-spacing: -0.01em;
+  line-height: 1.3;
+}
+
+.address-text {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+  line-height: 1.45;
+  background: rgba(0, 0, 0, 0.14);
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+[data-theme="light"] .address-text {
+  background: rgba(0, 0, 0, 0.03);
+}
+
+.address-actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 2px;
+}
+
+.btn-xs {
+  padding: 4px 9px;
+  font-size: 0.72rem;
+  border-radius: 4px;
+}
+
+.btn-xs svg {
+  width: 13px;
+  height: 13px;
+}
+
+/* Floating Place Badge */
+.floating-place-badge {
+  max-width: 280px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Leaflet Popup Custom Styling */
+.leaflet-popup-content-wrapper {
+  background: var(--bg-topbar) !important;
+  backdrop-filter: blur(20px) !important;
+  -webkit-backdrop-filter: blur(20px) !important;
+  color: var(--text-main) !important;
+  border: 1px solid var(--border-color) !important;
+  border-radius: var(--radius-md) !important;
+  box-shadow: var(--shadow-md) !important;
+  padding: 0 !important;
+}
+
+.leaflet-popup-tip {
+  background: var(--bg-topbar) !important;
+}
+
+.leaflet-popup-content {
+  margin: 12px 14px !important;
+  line-height: 1.45 !important;
+}
+
+.gps-marker-popup {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 220px;
+  max-width: 320px;
+}
+
+.popup-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--accent-cyan);
+}
+
+.popup-addr {
+  font-size: 0.78rem;
+  color: var(--text-main);
+  line-height: 1.35;
+}
+
+.popup-stats {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.74rem;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+  margin-top: 2px;
+}
+
+.popup-coords {
+  font-size: 0.72rem;
+  color: var(--text-faint);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.popup-link {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: var(--accent-cyan);
+  text-decoration: none;
+  margin-top: 3px;
+  display: inline-block;
+}
+
+.popup-link:hover {
+  text-decoration: underline;
+}
+
 /* Course Compass Card */
 .course-body {
   display: flex;
@@ -587,20 +744,52 @@ html, body {
   font-family: 'JetBrains Mono', monospace;
 }
 
+.port-select-wrap {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
 .port-select-wrap select {
+  max-width: 170px;
   background: var(--bg-app);
   color: var(--text-main);
   border: 1px solid var(--border-color);
-  padding: 3px 8px;
+  padding: 4px 8px;
   border-radius: var(--radius-sm);
   font-size: 0.75rem;
   font-family: 'JetBrains Mono', monospace;
   outline: none;
   cursor: pointer;
+  text-overflow: ellipsis;
 }
 
 .port-select-wrap select:focus {
   border-color: var(--accent-cyan);
+}
+
+.btn-sm {
+  width: 26px;
+  height: 26px;
+  padding: 4px;
+  border-radius: var(--radius-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-sm svg {
+  width: 14px;
+  height: 14px;
+}
+
+.spinning svg {
+  animation: spinPort 0.8s linear infinite;
+}
+
+@keyframes spinPort {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
 }
 
 /* Map Container */
@@ -760,4 +949,431 @@ html, body {
     width: 100%;
     max-width: 340px;
   }
+}
+
+/* ==========================================================================
+   Serial Monitor Drawer & Console Styles
+   ========================================================================== */
+
+/* Topbar Pulse Indicator */
+.serial-pulse-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background-color: var(--status-green);
+  opacity: 0.35;
+  transition: opacity 0.2s, transform 0.2s;
+  flex-shrink: 0;
+}
+
+.serial-pulse-dot.active {
+  opacity: 1;
+  box-shadow: 0 0 8px var(--status-green);
+  transform: scale(1.4);
+}
+
+.btn-monitor.active {
+  background: var(--accent-cyan) !important;
+  color: #ffffff !important;
+  border-color: var(--accent-cyan) !important;
+  box-shadow: 0 0 14px var(--accent-glow) !important;
+}
+
+/* Serial Monitor Bottom Drawer / Dock */
+.serial-drawer {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  height: 340px;
+  max-height: 85%;
+  background: rgba(10, 15, 26, 0.96);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  border-top: 2px solid var(--border-color);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.6);
+  display: flex;
+  flex-direction: column;
+  z-index: 950;
+  transition: transform 0.3s cubic-bezier(0.16, 1, 0.3, 1), height 0.3s cubic-bezier(0.16, 1, 0.3, 1);
+  transform: translateY(0);
+}
+
+[data-theme="light"] .serial-drawer {
+  background: rgba(248, 250, 252, 0.97);
+  box-shadow: 0 -8px 32px rgba(0, 0, 0, 0.15);
+}
+
+.serial-drawer.hidden {
+  transform: translateY(105%);
+  pointer-events: none;
+}
+
+.serial-drawer.maximized {
+  height: calc(100% - 15px);
+}
+
+/* Drawer Header */
+.serial-drawer-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 14px;
+  background: rgba(15, 23, 42, 0.95);
+  border-bottom: 1px solid var(--border-color);
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+[data-theme="light"] .serial-drawer-header {
+  background: rgba(241, 245, 249, 0.95);
+}
+
+.serial-header-left {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.serial-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.82rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-main);
+}
+
+.serial-title svg {
+  width: 16px;
+  height: 16px;
+  color: var(--accent-cyan);
+}
+
+.serial-port-pill,
+.serial-baud-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 3px 10px;
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.serial-baud-pill select {
+  background: transparent;
+  border: none;
+  color: var(--text-main);
+  font-size: 0.74rem;
+  font-family: 'JetBrains Mono', monospace;
+  font-weight: 600;
+  cursor: pointer;
+  outline: none;
+}
+
+.serial-baud-pill select option {
+  background: var(--bg-app);
+  color: var(--text-main);
+}
+
+/* Drawer Header Right Controls */
+.serial-header-right {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.serial-filters {
+  display: flex;
+  gap: 3px;
+  background: rgba(0, 0, 0, 0.2);
+  padding: 2px;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border-color);
+}
+
+[data-theme="light"] .serial-filters {
+  background: rgba(0, 0, 0, 0.05);
+}
+
+.filter-chip {
+  padding: 3px 8px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  background: transparent;
+  color: var(--text-muted);
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: var(--transition);
+}
+
+.filter-chip:hover {
+  color: var(--text-main);
+}
+
+.filter-chip.active {
+  background: var(--accent-cyan);
+  color: #fff;
+}
+
+.serial-search-box input {
+  background: rgba(0, 0, 0, 0.25);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 4px 8px;
+  font-size: 0.72rem;
+  color: var(--text-main);
+  width: 100px;
+  outline: none;
+  transition: var(--transition);
+  font-family: 'JetBrains Mono', monospace;
+}
+
+[data-theme="light"] .serial-search-box input {
+  background: #ffffff;
+}
+
+.serial-search-box input:focus {
+  width: 130px;
+  border-color: var(--accent-cyan);
+}
+
+.monitor-checkbox {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  cursor: pointer;
+  user-select: none;
+}
+
+.monitor-checkbox input {
+  cursor: pointer;
+  accent-color: var(--accent-cyan);
+}
+
+/* Diagnostic Bar */
+.serial-diag-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 14px;
+  background: rgba(6, 182, 212, 0.1);
+  border-bottom: 1px solid rgba(6, 182, 212, 0.2);
+  font-size: 0.75rem;
+  color: var(--text-muted);
+  line-height: 1.4;
+}
+
+.serial-diag-bar strong {
+  color: var(--accent-cyan);
+}
+
+.serial-diag-bar code {
+  background: rgba(0, 0, 0, 0.3);
+  padding: 1px 5px;
+  border-radius: 3px;
+  font-family: 'JetBrains Mono', monospace;
+  color: var(--text-main);
+}
+
+[data-theme="light"] .serial-diag-bar code {
+  background: rgba(0, 0, 0, 0.08);
+}
+
+/* Terminal Body */
+.terminal-body {
+  flex: 1;
+  overflow-y: auto;
+  overflow-x: hidden;
+  padding: 8px 14px;
+  background: #070a12;
+  color: #e2e8f0;
+  font-size: 0.78rem;
+  line-height: 1.55;
+  font-family: 'JetBrains Mono', 'Consolas', monospace;
+  outline: none;
+  scroll-behavior: smooth;
+}
+
+[data-theme="light"] .terminal-body {
+  background: #0f172a; /* Terminal body stays dark for contrast & authentic developer console experience */
+  color: #f1f5f9;
+}
+
+.terminal-waiting {
+  color: #64748b;
+  font-style: italic;
+  padding: 12px 0;
+}
+
+.term-line {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 2px 0;
+  word-break: break-all;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.term-line.hidden-by-filter {
+  display: none !important;
+}
+
+.term-time {
+  color: #64748b;
+  font-size: 0.72rem;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.term-time.hidden {
+  display: none;
+}
+
+.term-tag {
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0 5px;
+  border-radius: 3px;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.tag-rx {
+  background: rgba(16, 185, 129, 0.2);
+  color: #34d399;
+}
+
+.tag-tx {
+  background: rgba(6, 182, 212, 0.2);
+  color: #38bdf8;
+}
+
+.tag-sys {
+  background: rgba(168, 85, 247, 0.2);
+  color: #c084fc;
+}
+
+.tag-error {
+  background: rgba(239, 68, 68, 0.2);
+  color: #f87171;
+}
+
+.term-content {
+  flex: 1;
+}
+
+.content-json {
+  color: #a7f3d0;
+}
+
+.content-json.has-fix {
+  color: #38ef7d;
+  font-weight: 600;
+}
+
+.content-json.no-fix {
+  color: #fde047;
+}
+
+.content-nmea {
+  color: #e879f9;
+}
+
+.content-debug {
+  color: #94a3b8;
+}
+
+.content-tx {
+  color: #38bdf8;
+}
+
+.content-sys {
+  color: #c084fc;
+}
+
+.content-error {
+  color: #f87171;
+}
+
+/* Terminal Footer / Command Input */
+.terminal-footer {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  background: rgba(15, 23, 42, 0.95);
+  border-top: 1px solid var(--border-color);
+}
+
+[data-theme="light"] .terminal-footer {
+  background: rgba(241, 245, 249, 0.95);
+}
+
+.terminal-input-wrap {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 0 8px;
+}
+
+[data-theme="light"] .terminal-input-wrap {
+  background: #ffffff;
+}
+
+.terminal-prompt {
+  color: var(--accent-cyan);
+  font-weight: 700;
+  font-family: 'JetBrains Mono', monospace;
+  margin-right: 6px;
+  user-select: none;
+}
+
+.terminal-input-wrap input {
+  flex: 1;
+  background: transparent;
+  border: none;
+  outline: none;
+  padding: 7px 0;
+  color: var(--text-main);
+  font-size: 0.8rem;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.terminal-footer select {
+  background: var(--bg-card);
+  border: 1px solid var(--border-color);
+  color: var(--text-main);
+  padding: 6px 10px;
+  border-radius: var(--radius-sm);
+  font-size: 0.74rem;
+  outline: none;
+  cursor: pointer;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.btn-send {
+  background: var(--accent-cyan);
+  color: #fff;
+  border: 1px solid var(--accent-cyan);
+}
+
+.btn-send:hover {
+  background: var(--accent-blue);
+  box-shadow: 0 0 12px var(--accent-glow);
 }

@@ -9,6 +9,7 @@
 
 require('dotenv').config();
 const http = require('http');
+const https = require('https');
 const path = require('path');
 const fs = require('fs');
 const express = require('express');
@@ -21,8 +22,9 @@ const { ReadlineParser } = require('@serialport/parser-readline');
 const PORT = parseInt(process.env.PORT || '3000', 10);
 let serialPortPath = process.env.SERIAL_PORT || 'COM7';
 let baudRate = parseInt(process.env.BAUD_RATE || '115200', 10);
+let isAutoDetect = process.env.AUTO_DETECT !== 'false'; // Smart auto-connect by default
 const MAX_TRAIL_POINTS = parseInt(process.env.MAX_TRAIL_POINTS || '500', 10);
-const RECONNECT_INTERVAL_MS = parseInt(process.env.RECONNECT_INTERVAL_MS || '3000', 10);
+const RECONNECT_INTERVAL_MS = parseInt(process.env.RECONNECT_INTERVAL_MS || '2000', 10);
 const LOG_DIR = path.resolve(__dirname, process.env.LOG_DIR || 'logs');
 const SIMULATION_MODE = process.env.SIMULATION_MODE === 'true';
 
@@ -59,18 +61,160 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // --- In-Memory State ---
 let latestReading = null;
+let latestAddress = null;
 const trailHistory = []; // Ring-buffer of valid fix points
+const geocodeCache = new Map();
+
+/**
+ * Reverse geocodes coordinates to a human-readable place name and full street address.
+ * Primary provider: Photon (OpenStreetMap data with street and neighborhood precision).
+ * Secondary fallback: BigDataCloud client API.
+ */
+function reverseGeocode(lat, lng) {
+  const roundedLat = Number(lat).toFixed(4);
+  const roundedLng = Number(lng).toFixed(4);
+  const cacheKey = `${roundedLat},${roundedLng}`;
+
+  if (geocodeCache.has(cacheKey)) {
+    return Promise.resolve(geocodeCache.get(cacheKey));
+  }
+
+  return new Promise((resolve) => {
+    // 1. Try Photon (OpenStreetMap data)
+    const photonUrl = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lng}`;
+    const req = https.get(photonUrl, { headers: { 'User-Agent': 'ESP32-GPS-Tracker-Dashboard/1.0' }, timeout: 4000 }, (res) => {
+      let data = '';
+      res.on('data', c => data += c);
+      res.on('end', () => {
+        try {
+          const json = JSON.parse(data);
+          if (json && Array.isArray(json.features) && json.features.length > 0) {
+            const p = json.features[0].properties;
+            const parts = [];
+            if (p.housenumber) parts.push(p.housenumber);
+            if (p.name) parts.push(p.name);
+            if (p.street && p.street !== p.name) parts.push(p.street);
+            if (p.locality && p.locality !== p.name) parts.push(p.locality);
+            if (p.district) parts.push(p.district);
+            if (p.city || p.county) parts.push(p.city || p.county);
+            if (p.state) parts.push(p.state);
+            if (p.postcode) parts.push(p.postcode);
+            if (p.country) parts.push(p.country);
+
+            const placeName = p.name || p.street || p.locality || p.district || 'Location';
+            const fullAddress = parts.filter(Boolean).join(', ');
+            const result = { success: true, placeName, fullAddress, details: p };
+            geocodeCache.set(cacheKey, result);
+            return resolve(result);
+          }
+        } catch (e) {}
+
+        // Fallback to BigDataCloud
+        fallbackBigDataCloud(lat, lng, cacheKey, resolve);
+      });
+    });
+
+    req.on('timeout', () => {
+      req.destroy();
+      fallbackBigDataCloud(lat, lng, cacheKey, resolve);
+    });
+
+    req.on('error', () => {
+      fallbackBigDataCloud(lat, lng, cacheKey, resolve);
+    });
+  });
+}
+
+function fallbackBigDataCloud(lat, lng, cacheKey, resolve) {
+  const bdcUrl = `https://api.bigdatacloud.net/data/reverse-geocode-client?latitude=${lat}&longitude=${lng}&localityLanguage=en`;
+  const req = https.get(bdcUrl, { timeout: 4000 }, (res) => {
+    let data = '';
+    res.on('data', c => data += c);
+    res.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        const parts = [json.locality, json.city, json.principalSubdivision, json.countryName].filter(Boolean);
+        const placeName = json.locality || json.city || 'Location';
+        const fullAddress = parts.join(', ');
+        const result = { success: true, placeName, fullAddress, details: json };
+        geocodeCache.set(cacheKey, result);
+        resolve(result);
+      } catch (err) {
+        resolve({ success: false, error: err.message });
+      }
+    });
+  });
+
+  req.on('timeout', () => {
+    req.destroy();
+    resolve({ success: false, error: 'Reverse geocode timed out' });
+  });
+
+  req.on('error', (err) => {
+    resolve({ success: false, error: err.message });
+  });
+}
+
+// Serial Monitor Circular Buffer (recent 500 lines)
+const MAX_SERIAL_LOG_ENTRIES = 500;
+const serialLogHistory = [];
+let serialLogId = 0;
+
+/**
+ * Appends a log entry to the in-memory serial history and broadcasts it to web clients.
+ */
+function addSerialLog(direction, text, type = 'raw') {
+  const entry = {
+    id: ++serialLogId,
+    timestamp: new Date().toISOString(),
+    direction, // 'rx' | 'tx' | 'sys'
+    text: String(text),
+    type // 'json' | 'nmea' | 'debug' | 'tx' | 'sys' | 'error'
+  };
+
+  serialLogHistory.push(entry);
+  if (serialLogHistory.length > MAX_SERIAL_LOG_ENTRIES) {
+    serialLogHistory.shift();
+  }
+
+  io.emit('serial:line', entry);
+  return entry;
+}
 
 let serialPort = null;
 let parser = null;
 let reconnectTimer = null;
+let isConnecting = false;
 let currentSerialStatus = {
   status: 'disconnected', // 'connected' | 'disconnected' | 'error' | 'reconnecting'
   port: serialPortPath,
   baudRate: baudRate,
+  autoDetect: isAutoDetect,
   message: 'Initializing...',
   timestamp: new Date().toISOString()
 };
+
+/**
+ * Writes data directly to the open serial port.
+ */
+function writeToSerial(text, lineEnding = '\r\n') {
+  return new Promise((resolve, reject) => {
+    if (!serialPort || !serialPort.isOpen) {
+      const err = new Error(`Serial port (${serialPortPath}) is not open.`);
+      addSerialLog('sys', `[TX Error] ${err.message}`, 'error');
+      return reject(err);
+    }
+    const fullText = String(text) + lineEnding;
+    serialPort.write(fullText, (err) => {
+      if (err) {
+        addSerialLog('sys', `[TX Error] ${err.message}`, 'error');
+        return reject(err);
+      }
+      addSerialLog('tx', text, 'tx');
+      resolve();
+    });
+  });
+}
 
 /**
  * Updates the current serial status and broadcasts it to all connected Socket.IO clients.
@@ -80,11 +224,13 @@ function updateSerialStatus(status, message) {
     status,
     port: serialPortPath,
     baudRate: baudRate,
+    autoDetect: isAutoDetect,
     message,
     timestamp: new Date().toISOString()
   };
   io.emit('serial:status', currentSerialStatus);
-  console.log(`[Serial Status] ${status.toUpperCase()} (${serialPortPath}): ${message}`);
+  addSerialLog('sys', `[Status: ${status.toUpperCase()}] ${message}`, 'sys');
+  console.log(`[Serial Status] ${status.toUpperCase()} (${serialPortPath}, Auto=${isAutoDetect}): ${message}`);
 }
 
 /**
@@ -100,31 +246,11 @@ function logFixToCsv(fix) {
 }
 
 /**
- * Parses and validates an incoming raw line from the serial port.
- * Safely ignores debug text and invalid JSON without crashing.
+ * Broadcasts validated GPS reading to all connected web clients,
+ * updates in-memory history, and records valid fixes to the session CSV.
  */
-function handleIncomingLine(rawLine) {
-  if (!rawLine) return;
-  const line = rawLine.trim();
-
-  // ESP32 debug or non-JSON logs (e.g., "# ESP32 GPS streamer started") must be ignored
-  if (!line.startsWith('{')) {
-    // Log debug lines to console for developer visibility
-    console.log(`[ESP32 Debug]: ${line}`);
-    return;
-  }
-
-  let parsed = null;
-  try {
-    parsed = JSON.parse(line);
-  } catch (err) {
-    console.warn(`[Serial] Ignored malformed JSON line: "${line}"`);
-    return;
-  }
-
-  if (typeof parsed !== 'object' || parsed === null) {
-    return;
-  }
+function broadcastReading(parsed) {
+  if (typeof parsed !== 'object' || parsed === null) return;
 
   // Stamp with server-side ISO timestamp
   parsed.timestamp = new Date().toISOString();
@@ -180,6 +306,295 @@ function handleIncomingLine(rawLine) {
 
   // Broadcast to all connected web clients
   io.emit('gps:update', parsed);
+
+  // If valid GPS fix, resolve human-readable place name and address
+  if (parsed.fix === true && typeof parsed.lat === 'number' && typeof parsed.lng === 'number') {
+    reverseGeocode(parsed.lat, parsed.lng).then((addr) => {
+      if (addr && addr.success) {
+        latestAddress = {
+          lat: parsed.lat,
+          lng: parsed.lng,
+          placeName: addr.placeName,
+          fullAddress: addr.fullAddress,
+          timestamp: new Date().toISOString()
+        };
+        io.emit('gps:address', latestAddress);
+      }
+    }).catch(() => {});
+  }
+}
+
+// Internal state buffer for combining NMEA GGA + RMC sentences
+const nmeaState = {
+  lat: null,
+  lng: null,
+  alt: 0,
+  speed: 0,
+  course: 0,
+  sats: 0,
+  hdop: null,
+  fix: false,
+  chars: 0
+};
+
+/**
+ * Converts NMEA coordinate string (DDMM.MMMM or DDDMM.MMMM) to decimal degrees.
+ */
+function parseNmeaCoord(val, dir) {
+  if (!val || !dir) return null;
+  const dotIdx = val.indexOf('.');
+  if (dotIdx < 2) return null;
+  const degLen = dotIdx - 2;
+  const degrees = parseFloat(val.substring(0, degLen));
+  const minutes = parseFloat(val.substring(degLen));
+  let deg = degrees + (minutes / 60);
+  if (dir === 'S' || dir === 'W') deg = -deg;
+  return Number(deg.toFixed(6));
+}
+
+/**
+ * Fallback parser for raw NMEA sentences ($GPRMC, $GNRMC, $GPGGA, $GNGGA).
+ */
+function parseNmeaLine(nmeaStr) {
+  try {
+    const clean = nmeaStr.split('*')[0].trim();
+    const parts = clean.split(',');
+    const type = (parts[0] || '').toUpperCase();
+    nmeaState.chars += nmeaStr.length;
+
+    if (type.endsWith('RMC')) {
+      // $--RMC,time,status,lat,N/S,lon,E/W,speed(knots),course(deg),date,...
+      const status = parts[2]; // 'A' = valid fix, 'V' = receiver warning (no fix)
+      if (status === 'A') {
+        const lat = parseNmeaCoord(parts[3], parts[4]);
+        const lng = parseNmeaCoord(parts[5], parts[6]);
+        const speedKnots = parseFloat(parts[7]) || 0;
+        const speedKmh = Number((speedKnots * 1.852).toFixed(2));
+        const course = parseFloat(parts[8]) || 0;
+
+        if (lat !== null && lng !== null) {
+          nmeaState.lat = lat;
+          nmeaState.lng = lng;
+          nmeaState.speed = speedKmh;
+          nmeaState.course = Number(course.toFixed(1));
+          nmeaState.fix = true;
+          broadcastReading({
+            fix: true,
+            lat: nmeaState.lat,
+            lng: nmeaState.lng,
+            alt: nmeaState.alt,
+            speed: nmeaState.speed,
+            course: nmeaState.course,
+            sats: nmeaState.sats,
+            hdop: nmeaState.hdop,
+            chars: nmeaState.chars
+          });
+        }
+      } else {
+        nmeaState.fix = false;
+        broadcastReading({
+          fix: false,
+          sats: nmeaState.sats,
+          chars: nmeaState.chars
+        });
+      }
+    } else if (type.endsWith('GGA')) {
+      // $--GGA,time,lat,N/S,lon,E/W,quality,sats,hdop,alt,M,...
+      const quality = parseInt(parts[6], 10) || 0;
+      const sats = parseInt(parts[7], 10) || 0;
+      const hdop = parseFloat(parts[8]) || null;
+      const alt = parseFloat(parts[9]) || 0;
+
+      nmeaState.sats = sats;
+      nmeaState.hdop = hdop;
+      nmeaState.alt = alt;
+
+      if (quality > 0) {
+        const lat = parseNmeaCoord(parts[2], parts[3]);
+        const lng = parseNmeaCoord(parts[4], parts[5]);
+        if (lat !== null && lng !== null) {
+          nmeaState.lat = lat;
+          nmeaState.lng = lng;
+          nmeaState.fix = true;
+          broadcastReading({
+            fix: true,
+            lat: nmeaState.lat,
+            lng: nmeaState.lng,
+            alt: nmeaState.alt,
+            speed: nmeaState.speed,
+            course: nmeaState.course,
+            sats: nmeaState.sats,
+            hdop: nmeaState.hdop,
+            chars: nmeaState.chars
+          });
+        }
+      } else {
+        if (!nmeaState.fix) {
+          broadcastReading({
+            fix: false,
+            sats: nmeaState.sats,
+            chars: nmeaState.chars
+          });
+        }
+      }
+    }
+  } catch (err) {
+    console.warn(`[NMEA] Error parsing line "${nmeaStr}": ${err.message}`);
+  }
+}
+
+/**
+ * Parses and validates an incoming raw line from the serial port.
+ * Safely streams lines to the web Serial Monitor, supports JSON and NMEA telemetry,
+ * and handles debug messages without crashing.
+ */
+function handleIncomingLine(rawLine) {
+  if (!rawLine) return;
+  const line = rawLine.trim();
+  if (!line) return;
+
+  // Identify line type for Serial Monitor classification
+  let lineType = 'debug';
+  if (line.startsWith('{')) {
+    lineType = 'json';
+  } else if (line.startsWith('$GP') || line.startsWith('$GN') || line.startsWith('$GL') || line.startsWith('$BD')) {
+    lineType = 'nmea';
+  }
+
+  // Stream raw line to connected web Serial Monitors
+  addSerialLog('rx', line, lineType);
+
+  // Parse NMEA if line starts with NMEA prefix
+  if (lineType === 'nmea') {
+    parseNmeaLine(line);
+    return;
+  }
+
+  // Non-JSON debug logs
+  if (lineType !== 'json') {
+    console.log(`[ESP32 Debug]: ${line}`);
+    return;
+  }
+
+  let parsed = null;
+  try {
+    parsed = JSON.parse(line);
+  } catch (err) {
+    console.warn(`[Serial] Ignored malformed JSON line: "${line}"`);
+    return;
+  }
+
+  if (typeof parsed !== 'object' || parsed === null) {
+    return;
+  }
+
+  broadcastReading(parsed);
+}
+
+/**
+ * Helper to identify Bluetooth serial ports (which should be skipped for auto-connect)
+ */
+function isBluetoothPort(port) {
+  const pnp = (port.pnpId || '').toLowerCase();
+  const name = (port.friendlyName || '').toLowerCase();
+  const mfg = (port.manufacturer || '').toLowerCase();
+  return pnp.startsWith('bthenum') || name.includes('bluetooth') || (mfg.includes('microsoft') && name.includes('bluetooth'));
+}
+
+/**
+ * Checks if a detected port corresponds to an ESP32 or common USB-to-UART bridge
+ */
+function isEspCandidate(port) {
+  if (isBluetoothPort(port)) return false;
+  const vid = (port.vendorId || '').toLowerCase();
+  const pnp = (port.pnpId || '').toLowerCase();
+  const name = (port.friendlyName || '').toLowerCase();
+  const mfg = (port.manufacturer || '').toLowerCase();
+
+  // Common ESP32 USB-UART chip VIDs:
+  // 10c4: Silicon Labs CP210x
+  // 1a86: WCH CH340 / CH341
+  // 0403: FTDI
+  // 303a: Espressif Native USB
+  // 2341: Arduino
+  // 067b: Prolific
+  const knownVids = ['10c4', '1a86', '0403', '303a', '2341', '067b'];
+  if (knownVids.includes(vid)) return true;
+
+  if (pnp.includes('vid_10c4') || pnp.includes('vid_1a86') || pnp.includes('vid_0403') || pnp.includes('vid_303a') || pnp.includes('vid_2341')) {
+    return true;
+  }
+
+  const keywords = ['cp210', 'ch340', 'ch341', 'ftdi', 'silicon labs', 'espressif', 'uart', 'usb serial', 'usb-to-serial', 'usb-serial'];
+  return keywords.some(k => name.includes(k) || mfg.includes(k));
+}
+
+/**
+ * Returns formatted port list with metadata (ESP candidates vs Bluetooth).
+ */
+async function getSanitizedPortsList() {
+  try {
+    const rawPorts = await SerialPort.list();
+    return rawPorts.map((p) => ({
+      path: p.path,
+      friendlyName: p.friendlyName || p.path,
+      manufacturer: p.manufacturer || 'Unknown',
+      pnpId: p.pnpId || null,
+      vendorId: p.vendorId || null,
+      productId: p.productId || null,
+      isBluetooth: isBluetoothPort(p),
+      isEspCandidate: isEspCandidate(p)
+    }));
+  } catch (err) {
+    console.error('[Serial] Error listing ports:', err.message);
+    return [];
+  }
+}
+
+/**
+ * Broadcasts the current list of available ports to all connected web clients.
+ */
+async function broadcastPortsList() {
+  const ports = await getSanitizedPortsList();
+  io.emit('ports:list', {
+    success: true,
+    currentPort: serialPortPath,
+    currentBaudRate: baudRate,
+    autoDetect: isAutoDetect,
+    status: currentSerialStatus.status,
+    ports
+  });
+  return ports;
+}
+
+/**
+ * Smartly finds the best candidate port for the ESP32.
+ */
+async function autoDetectBestPort() {
+  const ports = await getSanitizedPortsList();
+  const physicalPorts = ports.filter(p => !p.isBluetooth);
+  if (physicalPorts.length === 0) return null;
+
+  // 1. Prioritize recognized ESP32 / USB UART adapters
+  const espCandidates = physicalPorts.filter(p => p.isEspCandidate);
+  if (espCandidates.length > 0) {
+    // If configured port in .env matches one of the candidates, prefer it
+    const matchEnv = espCandidates.find(p => p.path.toUpperCase() === (process.env.SERIAL_PORT || '').toUpperCase());
+    if (matchEnv) return matchEnv;
+
+    // If current serialPortPath is an active candidate, keep it
+    const matchCurrent = espCandidates.find(p => p.path.toUpperCase() === serialPortPath.toUpperCase());
+    if (matchCurrent) return matchCurrent;
+
+    return espCandidates[0];
+  }
+
+  // 2. Any USB port that is not Bluetooth
+  const usbPorts = physicalPorts.filter(p => (p.pnpId || '').toUpperCase().startsWith('USB'));
+  if (usbPorts.length > 0) return usbPorts[0];
+
+  // 3. Fallback to first non-bluetooth port
+  return physicalPorts[0];
 }
 
 /**
@@ -187,7 +602,7 @@ function handleIncomingLine(rawLine) {
  */
 function scheduleReconnect(delay = RECONNECT_INTERVAL_MS) {
   if (reconnectTimer) return;
-  updateSerialStatus('reconnecting', `Attempting reconnection in ${(delay / 1000).toFixed(0)}s...`);
+  updateSerialStatus('reconnecting', isAutoDetect ? 'Searching for ESP32 USB connection...' : `Attempting reconnection in ${(delay / 1000).toFixed(0)}s...`);
   
   reconnectTimer = setTimeout(() => {
     reconnectTimer = null;
@@ -225,7 +640,7 @@ function cleanupSerialPort() {
 /**
  * Opens the serial port and sets up data listeners and auto-reconnect handlers.
  */
-function openSerialPort() {
+async function openSerialPort() {
   if (SIMULATION_MODE) {
     console.log('[Serial] SIMULATION_MODE is active. Skipping physical serial port connection.');
     updateSerialStatus('connected', `Running in Simulation Mode (virtual GPS)`);
@@ -233,9 +648,26 @@ function openSerialPort() {
     return;
   }
 
+  if (isConnecting) return;
+  isConnecting = true;
+
   cleanupSerialPort();
 
-  console.log(`[Serial] Connecting to ${serialPortPath} at ${baudRate} baud...`);
+  // If in Auto-Detect mode, scan for connected devices
+  if (isAutoDetect) {
+    const candidate = await autoDetectBestPort();
+    if (!candidate) {
+      isConnecting = false;
+      updateSerialStatus('disconnected', 'Waiting for ESP32 USB cable connection...');
+      broadcastPortsList();
+      scheduleReconnect(2000);
+      return;
+    }
+    serialPortPath = candidate.path;
+    console.log(`[Serial Auto-Detect] Selected candidate: ${candidate.path} (${candidate.friendlyName})`);
+  }
+
+  console.log(`[Serial] Connecting to ${serialPortPath} at ${baudRate} baud (Auto-Detect=${isAutoDetect})...`);
 
   try {
     serialPort = new SerialPort({
@@ -244,13 +676,16 @@ function openSerialPort() {
       autoOpen: false
     });
   } catch (err) {
+    isConnecting = false;
     updateSerialStatus('error', `Failed to initialize port instance: ${err.message}`);
+    broadcastPortsList();
     scheduleReconnect();
     return;
   }
 
   // Handle open errors
   serialPort.open((err) => {
+    isConnecting = false;
     if (err) {
       let friendlyMsg = err.message;
       if (err.message.includes('Access denied')) {
@@ -260,11 +695,13 @@ function openSerialPort() {
       }
 
       updateSerialStatus('error', friendlyMsg);
+      broadcastPortsList();
       scheduleReconnect();
       return;
     }
 
     updateSerialStatus('connected', `Connected to ${serialPortPath} at ${baudRate} baud.`);
+    broadcastPortsList();
 
     // Pipe serial data through ReadlineParser (splits on newline, works with both \r\n and \n)
     parser = serialPort.pipe(new ReadlineParser({ delimiter: '\n' }));
@@ -273,15 +710,19 @@ function openSerialPort() {
 
   // Handle connection errors while open
   serialPort.on('error', (err) => {
+    isConnecting = false;
     updateSerialStatus('error', `Serial port error: ${err.message}`);
+    broadcastPortsList();
     scheduleReconnect();
   });
 
   // Handle unexpected port closures (e.g., unplugged USB)
   serialPort.on('close', (err) => {
+    isConnecting = false;
     const reason = err ? ` (${err.message})` : '';
-    updateSerialStatus('disconnected', `Serial port closed${reason}. Reconnecting...`);
-    scheduleReconnect();
+    updateSerialStatus('disconnected', `Serial port disconnected${reason}. Searching for device...`);
+    broadcastPortsList();
+    scheduleReconnect(1500);
   });
 }
 
@@ -333,15 +774,68 @@ function startSimulationFeed() {
 io.on('connection', (socket) => {
   console.log(`[Socket.IO] Client connected: ${socket.id} (total: ${io.engine.clientsCount})`);
 
-  // Send initial state: latest reading, full trail history, and serial port status
+  // Send initial state: latest reading, address, full trail history, serial port status, and recent serial logs
   socket.emit('gps:init', {
     current: latestReading,
+    address: latestAddress,
     history: trailHistory,
     serialStatus: currentSerialStatus,
     config: {
       port: serialPortPath,
       baudRate: baudRate,
+      autoDetect: isAutoDetect,
       maxTrailPoints: MAX_TRAIL_POINTS
+    },
+    serialLogs: serialLogHistory.slice(-200)
+  });
+
+  // Provide initial serial log history directly
+  socket.emit('serial:history', serialLogHistory.slice(-200));
+
+  // Provide available ports right away to new web clients
+  getSanitizedPortsList().then((ports) => {
+    socket.emit('ports:list', {
+      success: true,
+      currentPort: serialPortPath,
+      currentBaudRate: baudRate,
+      autoDetect: isAutoDetect,
+      status: currentSerialStatus.status,
+      ports
+    });
+  });
+
+  // Client sends data to ESP32 over serial port
+  socket.on('serial:send', async (payload, callback) => {
+    const text = typeof payload === 'object' && payload !== null ? payload.data : payload;
+    const lineEnding = typeof payload === 'object' && payload !== null && payload.lineEnding !== undefined ? payload.lineEnding : '\r\n';
+
+    if (text === undefined || text === null) {
+      if (typeof callback === 'function') callback({ success: false, error: 'No data provided.' });
+      return;
+    }
+
+    try {
+      await writeToSerial(text, lineEnding);
+      if (typeof callback === 'function') callback({ success: true });
+    } catch (err) {
+      if (typeof callback === 'function') callback({ success: false, error: err.message });
+    }
+  });
+
+  // Client requests clearing the serial monitor log buffer
+  socket.on('serial:clear', () => {
+    serialLogHistory.length = 0;
+    io.emit('serial:cleared', { timestamp: new Date().toISOString() });
+    console.log(`[Socket.IO] Serial logs cleared by client ${socket.id}`);
+  });
+
+  // Client requests baud rate change
+  socket.on('serial:set-baud', (newBaud) => {
+    const rate = parseInt(newBaud, 10);
+    if (rate > 0 && rate !== baudRate) {
+      console.log(`[Serial] Changing baud rate from ${baudRate} to ${rate}...`);
+      baudRate = rate;
+      openSerialPort();
     }
   });
 
@@ -352,10 +846,28 @@ io.on('connection', (socket) => {
     console.log(`[Socket.IO] Trail cleared by client ${socket.id}`);
   });
 
-  // Client requests manual serial reconnect
+  // Client requests manual serial reconnect or rescan
   socket.on('serial:reconnect', () => {
     console.log(`[Socket.IO] Manual reconnect requested by ${socket.id}`);
     openSerialPort();
+  });
+
+  // Client requests fresh port scan
+  socket.on('ports:refresh', () => {
+    broadcastPortsList();
+  });
+
+  // Client requests port switch via socket
+  socket.on('serial:select-port', (data) => {
+    if (data?.auto === true || data?.port === 'auto') {
+      isAutoDetect = true;
+      openSerialPort();
+    } else if (data?.port) {
+      isAutoDetect = false;
+      serialPortPath = data.port;
+      if (data.baud) baudRate = Number(data.baud);
+      openSerialPort();
+    }
   });
 
   // Support incoming mock/simulated streams for testing
@@ -371,22 +883,233 @@ io.on('connection', (socket) => {
 // --- REST API Endpoints ---
 
 /**
+ * POST /api/serial/send
+ * Sends text or commands to the device over the active serial port.
+ */
+app.post('/api/serial/send', async (req, res) => {
+  const { data, lineEnding } = req.body;
+  if (data === undefined || data === null) {
+    return res.status(400).json({ success: false, error: 'Field "data" is required.' });
+  }
+
+  try {
+    await writeToSerial(data, lineEnding !== undefined ? lineEnding : '\r\n');
+    res.json({ success: true, message: 'Command sent to serial port.' });
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/serial/logs
+ * Returns buffered recent serial logs.
+ */
+app.get('/api/serial/logs', (req, res) => {
+  res.json({
+    success: true,
+    count: serialLogHistory.length,
+    logs: serialLogHistory
+  });
+});
+
+/**
+ * POST /api/serial/clear
+ * Clears buffered serial logs.
+ */
+app.post('/api/serial/clear', (req, res) => {
+  serialLogHistory.length = 0;
+  io.emit('serial:cleared', { timestamp: new Date().toISOString() });
+  res.json({ success: true, message: 'Serial log history cleared.' });
+});
+
+/**
+ * GET /api/geocode/reverse
+ * Reverse geocodes coordinates to a place name and full address.
+ */
+app.get('/api/geocode/reverse', async (req, res) => {
+  const lat = parseFloat(req.query.lat);
+  const lng = parseFloat(req.query.lng);
+
+  if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
+    return res.status(400).json({ success: false, error: 'Valid "lat" and "lng" query parameters required.' });
+  }
+
+  try {
+    const result = await reverseGeocode(lat, lng);
+    res.json(result);
+  } catch (err) {
+    res.status(500).json({ success: false, error: err.message });
+  }
+});
+
+/**
+ * GET /api/geocode/search
+ * Autocomplete search for places, POIs, addresses, and landmarks.
+ */
+app.get('/api/geocode/search', (req, res) => {
+  const q = (req.query.q || '').trim();
+  const lat = parseFloat(req.query.lat);
+  const lng = parseFloat(req.query.lng);
+
+  if (!q) {
+    return res.json({ success: true, results: [] });
+  }
+
+  let photonUrl = `https://photon.komoot.io/api/?q=${encodeURIComponent(q)}&limit=8`;
+  if (!isNaN(lat) && !isNaN(lng)) {
+    photonUrl += `&lat=${lat}&lon=${lng}`;
+  }
+
+  const clientReq = https.get(photonUrl, { headers: { 'User-Agent': 'HinaMaps-Dashboard/2.0' }, timeout: 5000 }, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        const results = (json.features || []).map(f => {
+          const p = f.properties || {};
+          const coords = f.geometry ? f.geometry.coordinates : [0, 0];
+          const parts = [p.name, p.street, p.locality, p.district, p.city, p.state, p.country].filter(Boolean);
+          return {
+            name: p.name || p.street || 'Place',
+            description: parts.join(', '),
+            lat: coords[1],
+            lng: coords[0],
+            osmType: p.osm_type,
+            osmValue: p.osm_value,
+            postcode: p.postcode
+          };
+        });
+        res.json({ success: true, results });
+      } catch (err) {
+        res.status(500).json({ success: false, error: 'Failed to parse search response' });
+      }
+    });
+  });
+
+  clientReq.on('timeout', () => {
+    clientReq.destroy();
+    res.status(504).json({ success: false, error: 'Search request timed out' });
+  });
+
+  clientReq.on('error', (err) => {
+    res.status(502).json({ success: false, error: err.message });
+  });
+});
+
+/**
+ * GET /api/routing/route
+ * Turn-by-turn driving directions with maneuvers, alternatives, and ETA via OSRM.
+ */
+app.get('/api/routing/route', (req, res) => {
+  const startLng = parseFloat(req.query.startLng);
+  const startLat = parseFloat(req.query.startLat);
+  const endLng = parseFloat(req.query.endLng);
+  const endLat = parseFloat(req.query.endLat);
+  const alternatives = req.query.alternatives === 'true';
+
+  if (isNaN(startLng) || isNaN(startLat) || isNaN(endLng) || isNaN(endLat)) {
+    return res.status(400).json({ success: false, error: 'Valid startLng, startLat, endLng, endLat required.' });
+  }
+
+  const osrmUrl = `https://routing.openstreetmap.de/routed-car/route/v1/driving/${startLng},${startLat};${endLng},${endLat}?overview=full&geometries=geojson&steps=true&alternatives=${alternatives}`;
+
+  const clientReq = https.get(osrmUrl, { headers: { 'User-Agent': 'HinaMaps-Navigation/2.0' }, timeout: 7000 }, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        if (json.code !== 'Ok' || !json.routes || json.routes.length === 0) {
+          return res.status(404).json({ success: false, error: 'No route found between coordinates.' });
+        }
+        res.json({
+          success: true,
+          routes: json.routes.map(r => ({
+            distance: r.distance, // meters
+            duration: r.duration, // seconds
+            geometry: r.geometry, // GeoJSON LineString
+            legs: r.legs,
+            weight_name: r.weight_name
+          }))
+        });
+      } catch (err) {
+        res.status(500).json({ success: false, error: 'Failed to parse routing response' });
+      }
+    });
+  });
+
+  clientReq.on('timeout', () => {
+    clientReq.destroy();
+    res.status(504).json({ success: false, error: 'Routing request timed out' });
+  });
+
+  clientReq.on('error', (err) => {
+    res.status(502).json({ success: false, error: err.message });
+  });
+});
+
+/**
+ * GET /api/routing/nearest
+ * Snaps a GPS coordinate to the closest drivable road segment.
+ */
+app.get('/api/routing/nearest', (req, res) => {
+  const lng = parseFloat(req.query.lng);
+  const lat = parseFloat(req.query.lat);
+
+  if (isNaN(lng) || isNaN(lat)) {
+    return res.status(400).json({ success: false, error: 'Valid lng and lat required.' });
+  }
+
+  const osrmUrl = `https://routing.openstreetmap.de/routed-car/nearest/v1/driving/${lng},${lat}?number=1`;
+
+  const clientReq = https.get(osrmUrl, { headers: { 'User-Agent': 'HinaMaps-RoadMatching/2.0' }, timeout: 4000 }, (apiRes) => {
+    let data = '';
+    apiRes.on('data', chunk => data += chunk);
+    apiRes.on('end', () => {
+      try {
+        const json = JSON.parse(data);
+        if (json.code === 'Ok' && json.waypoints && json.waypoints.length > 0) {
+          const wp = json.waypoints[0];
+          return res.json({
+            success: true,
+            snappedLng: wp.location[0],
+            snappedLat: wp.location[1],
+            roadName: wp.name || '',
+            distance: wp.distance
+          });
+        }
+        res.json({ success: false, error: 'No road found nearby' });
+      } catch (err) {
+        res.status(500).json({ success: false, error: 'Failed to parse nearest road response' });
+      }
+    });
+  });
+
+  clientReq.on('timeout', () => {
+    clientReq.destroy();
+    res.status(504).json({ success: false, error: 'Nearest road request timed out' });
+  });
+
+  clientReq.on('error', (err) => {
+    res.status(502).json({ success: false, error: err.message });
+  });
+});
+
+/**
  * GET /api/ports
  * Lists available serial ports detected on the system.
  */
 app.get('/api/ports', async (req, res) => {
   try {
-    const ports = await SerialPort.list();
+    const ports = await getSanitizedPortsList();
     res.json({
       success: true,
       currentPort: serialPortPath,
       currentBaudRate: baudRate,
-      ports: ports.map((p) => ({
-        path: p.path,
-        friendlyName: p.friendlyName || p.path,
-        manufacturer: p.manufacturer || 'Unknown',
-        pnpId: p.pnpId || null
-      }))
+      autoDetect: isAutoDetect,
+      status: currentSerialStatus.status,
+      ports
     });
   } catch (err) {
     res.status(500).json({ success: false, error: err.message });
@@ -395,25 +1118,40 @@ app.get('/api/ports', async (req, res) => {
 
 /**
  * POST /api/ports/select
- * Changes the active serial port and baud rate on the fly.
+ * Changes the active serial port and baud rate on the fly, or toggles auto-detect.
  */
 app.post('/api/ports/select', (req, res) => {
-  const { port, baud } = req.body;
+  const { port, baud, auto } = req.body;
+
+  if (auto === true || port === 'auto') {
+    isAutoDetect = true;
+    console.log('[Serial] Switching to Auto-Detect mode by client request...');
+    openSerialPort();
+    return res.json({
+      success: true,
+      message: 'Auto-detect mode active. Scanning for ESP32...',
+      autoDetect: true,
+      serialStatus: currentSerialStatus
+    });
+  }
+
   if (!port) {
     return res.status(400).json({ success: false, error: 'Port path is required.' });
   }
 
+  isAutoDetect = false;
   serialPortPath = port;
   if (baud && Number.isInteger(Number(baud))) {
     baudRate = Number(baud);
   }
 
-  console.log(`[Serial] Switching to port ${serialPortPath} at ${baudRate} baud...`);
+  console.log(`[Serial] Switching to manual port ${serialPortPath} at ${baudRate} baud...`);
   openSerialPort();
 
   res.json({
     success: true,
     message: `Switching to ${serialPortPath} at ${baudRate} baud.`,
+    autoDetect: false,
     serialStatus: currentSerialStatus
   });
 });
@@ -465,7 +1203,7 @@ server.listen(PORT, () => {
   console.log(`=======================================================`);
   console.log(`  ESP32 GPS Real-Time Dashboard`);
   console.log(`  Web Dashboard:   http://localhost:${PORT}`);
-  console.log(`  Target Port:     ${serialPortPath} @ ${baudRate} baud`);
+  console.log(`  Serial Mode:     ${isAutoDetect ? 'Smart Auto-Discovery (Plug & Play)' : `${serialPortPath} @ ${baudRate} baud (Manual)`}`);
   console.log(`  Trail Depth:     ${MAX_TRAIL_POINTS} points`);
   console.log(`  Session CSV Log: ${sessionCsvPath}`);
   console.log(`=======================================================`);
