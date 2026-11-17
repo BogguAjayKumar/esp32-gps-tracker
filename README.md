@@ -1,37 +1,37 @@
-# Hina Maps 🛰️🧭 — Live Navigation & Spatial Telemetry
+# Hina Maps — Live Navigation & Spatial Telemetry
 
 A high-performance, premium live-tracking web map and navigation system built with **MapLibre GL JS**, **Node.js**, **Express**, **SerialPort**, and **Socket.IO**. Designed for hardware developers, vehicles, and outdoor exploration, Hina Maps connects to an **ESP32** microcontroller interfaced with a **u-blox NEO-6M / M8N GPS module** over USB serial, streaming live telemetry with sub-meter smoothing, road-snapping, 3D vector buildings, and spoken turn-by-turn driving directions.
 
 ---
 
-## 🏗️ Architecture Overview
+## Architecture Overview
 
 ```
- ┌──────────────────────┐        Serial (USB)         ┌────────────────────────┐
- │      ESP32 +         │  ─────────────────────────> │     Node.js Server     │
- │  NEO-6M GPS Module   │   115200 baud (JSON / NMEA) │ (Express + SerialPort) │
- └──────────────────────┘                             └──────────┬─────────────┘
-                                                                 │
-                                          Socket.IO & REST APIs  │  (Port 3000)
-                                                                 ▼
-                                                      ┌────────────────────────┐
-                                                      │  Hina Maps Web Client  │
-                                                      │ (MapLibre GL JS + PWA) │
-                                                      └────────────────────────┘
+ ┌──────────────────────┐ Serial (USB) ┌────────────────────────┐
+ │ ESP32 + │ ─────────────────────────> │ Node.js Server │
+ │ NEO-6M GPS Module │ 115200 baud (JSON / NMEA) │ (Express + SerialPort) │
+ └──────────────────────┘ └──────────┬─────────────┘
+ │
+ Socket.IO & REST APIs │ (Port 3000)
+ ▼
+ ┌────────────────────────┐
+ │ Hina Maps Web Client │
+ │ (MapLibre GL JS + PWA) │
+ └────────────────────────┘
 ```
 
 ---
 
-## ✨ Features
+## Features
 
 ### 1. Map Engine & Spatial Detail
 - **MapLibre GL JS (Vector & Hybrid Engine):** Replaced raster Leaflet with a modern WebGL-accelerated vector tile engine supporting linear raster overzooming up to zoom 22, smooth bearing rotations, and 3D camera pitching.
 - **5 Base Map Styles:**
-  1. **🛰️ Hybrid (Default):** High-resolution Esri World Imagery with vector road labels, place boundaries, and 3D buildings.
-  2. **🛰️ Pure Satellite:** Unobstructed high-detail aerial photography.
-  3. **🗺️ Streets:** Full Carto Voyager vector styling with high-zoom lane arrows, road classifications, and POIs.
-  4. **🌙 Dark:** High-contrast Carto Dark Matter vector theme for nighttime driving.
-  5. **⛰️ Terrain:** Topographic elevation contours with hillshading via OpenTopoMap.
+ 1. ** Hybrid (Default):** High-resolution Esri World Imagery with vector road labels, place boundaries, and 3D buildings.
+ 2. ** Pure Satellite:** Unobstructed high-detail aerial photography.
+ 3. ** Streets:** Full Carto Voyager vector styling with high-zoom lane arrows, road classifications, and POIs.
+ 4. ** Dark:** High-contrast Carto Dark Matter vector theme for nighttime driving.
+ 5. ** Terrain:** Topographic elevation contours with hillshading via OpenTopoMap.
 - **3D Buildings (Fill-Extrusion):** Dynamically rendered 3D building heights with gradient coloring based on building elevation and level counts.
 - **POIs & Zoom Filtering:** Displays hospitals, fuel stations, ATMs, restaurants, transit hubs, and schools filtered dynamically by zoom level to eliminate map clutter.
 - **Road Class Coloring:** Speed trails and road segments colored by speed and road hierarchy.
@@ -42,9 +42,9 @@ A high-performance, premium live-tracking web map and navigation system built wi
 - **Directional 3D Vehicle Marker:** Custom hardware-accelerated vehicle puck with pulsing beacon and rotating heading arrow aligned to direction of travel.
 - **Speed-Colored Path Trail:** Records the traveled route with GeoJSON LineString segments colored according to instantaneous speed (Green = cruising, Cyan = moderate, Amber = fast, Red = high speed).
 - **Auto-Follow & 3D Driving View:**
-  - **Follow 2D:** Keeps map centered on vehicle.
-  - **Follow 3D:** Tilts camera to 58° driving pitch and rotates map bearing with vehicle course heading.
-  - **Free Explore:** Panning or dragging the map automatically pauses auto-follow to allow manual inspection; re-center button snaps back instantly.
+ - **Follow 2D:** Keeps map centered on vehicle.
+ - **Follow 3D:** Tilts camera to 58° driving pitch and rotates map bearing with vehicle course heading.
+ - **Free Explore:** Panning or dragging the map automatically pauses auto-follow to allow manual inspection; re-center button snaps back instantly.
 - **Road Speed Limit Alerts:** Displays road speed limit badge and sounds/displays an animated warning alert when the vehicle exceeds the road limit.
 - **Cached Reverse-Geocoding:** Resolves current street address, place name, and postal code via Photon / BigDataCloud fallback with in-memory caching to eliminate rate limits.
 
@@ -70,33 +70,33 @@ A high-performance, premium live-tracking web map and navigation system built wi
 
 ---
 
-## 📁 Project Structure
+## Project Structure
 
 ```
 gps/
-├── .env                     # Local environment settings (PORT, SERIAL_PORT, BAUD_RATE)
-├── .env.example             # Template for environment configuration
-├── package.json             # Node.js project manifest & dependencies
-├── server.js                # Express server, SerialPort manager, OSRM/Geocode proxies & Socket.IO
-├── mock-gps.js              # Hardware simulation streamer for offline testing
+├── .env # Local environment settings (PORT, SERIAL_PORT, BAUD_RATE)
+├── .env.example # Template for environment configuration
+├── package.json # Node.js project manifest & dependencies
+├── server.js # Express server, SerialPort manager, OSRM/Geocode proxies & Socket.IO
+├── mock-gps.js # Hardware simulation streamer for offline testing
 ├── public/
-│   ├── index.html           # Modern HTML5 Hina Maps layout
-│   ├── style.css            # Glassmorphism styling, responsive themes, HUD & drawer styles
-│   ├── app.js               # MapLibre GL JS engine, Kalman filter integration & telemetry loop
-│   ├── manifest.json        # PWA Web Application Manifest
-│   ├── sw.js                # Service Worker for offline asset caching
-│   └── js/
-│       ├── kalman.js        # 2D GPS Kalman Filter implementation
-│       ├── speech.js        # Web Speech API turn-by-turn voice guide
-│       ├── storage.js       # LocalStorage favorites, trip history & GPX/GeoJSON exporters
-│       └── styles.js        # MapLibre vector style definitions & 3D buildings injector
-├── logs/                    # Timestamped CSV telemetry session recordings
-└── README.md                # Documentation and guide
+│ ├── index.html # Modern HTML5 Hina Maps layout
+│ ├── style.css # Glassmorphism styling, responsive themes, HUD & drawer styles
+│ ├── app.js # MapLibre GL JS engine, Kalman filter integration & telemetry loop
+│ ├── manifest.json # PWA Web Application Manifest
+│ ├── sw.js # Service Worker for offline asset caching
+│ └── js/
+│ ├── kalman.js # 2D GPS Kalman Filter implementation
+│ ├── speech.js # Web Speech API turn-by-turn voice guide
+│ ├── storage.js # LocalStorage favorites, trip history & GPX/GeoJSON exporters
+│ └── styles.js # MapLibre vector style definitions & 3D buildings injector
+├── logs/ # Timestamped CSV telemetry session recordings
+└── README.md # Documentation and guide
 ```
 
 ---
 
-## ⚡ Quick Start (Windows)
+## Quick Start (Windows)
 
 ### Prerequisites
 - **Node.js (v18, v20, or v22+)**: [Download Node.js](https://nodejs.org/)
@@ -118,7 +118,7 @@ Navigate to `http://localhost:3000` in Google Chrome, Microsoft Edge, or Safari.
 
 ---
 
-## 🧪 Testing Without Hardware (Simulation Mode)
+## Testing Without Hardware (Simulation Mode)
 
 If you are developing indoors without an ESP32 or satellite reception:
 ```powershell
@@ -128,7 +128,7 @@ This launches a virtual vehicle streaming realistic GPS fixes across Hyderabad /
 
 ---
 
-## 🌐 Free Tile & API Providers Used
+## Free Tile & API Providers Used
 
 | Service | Provider | Cost / API Key |
 |---|---|---|
@@ -143,5 +143,5 @@ This launches a virtual vehicle streaming realistic GPS fixes across Hyderabad /
 
 ---
 
-## 🛡️ License
+## License
 MIT License. Open-source and free for personal, commercial, and research use.
